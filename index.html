@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#03263a" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="description" content="Fin Frenzy - eat, grow and survive in a living 3D ocean." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Fin Frenzy</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #03263a;
+      }
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 28px;
+        background: radial-gradient(ellipse at 50% 20%, #1b8fb3 0%, #075074 45%, #03263a 100%);
+        transition: opacity 0.8s ease 0.2s, visibility 0s linear 1s;
+        font-family: 'Fredoka', system-ui, sans-serif;
+      }
+      body.ready #splash {
+        opacity: 0;
+        visibility: hidden;
+      }
+      .splash-logo {
+        font-size: clamp(44px, 9vw, 88px);
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #5ff2ff;
+        text-shadow: 0 6px 30px rgba(0, 20, 40, 0.5);
+      }
+      .splash-logo span + span {
+        color: #ffb347;
+      }
+      .splash-bubbles {
+        display: flex;
+        gap: 12px;
+      }
+      .splash-bubbles i {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        border: 2px solid rgba(190, 250, 255, 0.85);
+        animation: splash-bob 1.1s ease-in-out infinite;
+      }
+      .splash-bubbles i:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+      .splash-bubbles i:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+      @keyframes splash-bob {
+        0%,
+        100% {
+          transform: translateY(0);
+          opacity: 0.5;
+        }
+        50% {
+          transform: translateY(-12px);
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="splash" aria-hidden="true">
+      <div class="splash-logo"><span>Fin</span> <span>Frenzy</span></div>
+      <div class="splash-bubbles"><i></i><i></i><i></i></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
