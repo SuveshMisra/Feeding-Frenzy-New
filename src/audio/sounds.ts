@@ -1,7 +1,7 @@
 import { Rng } from '../engine/rng';
 import { addBubble, addBubbles, addModes, addNoise, addTone, finish, mixIn, trim } from './dsp';
 import { renderNote, type InstrumentId } from './instruments';
-import { CRUNCH_BIG, CRUNCH_SMALL, synthCrunch, synthSlurp, synthWhoosh } from './synth';
+import { CRUNCH_BIG, CRUNCH_MID, CRUNCH_SMALL, synthCrunch, synthSlurp, synthWhoosh, type CrunchPreset } from './synth';
 
 export interface SoundDef {
   /** Distinct takes; play() never repeats the previous one back to back. */
@@ -35,9 +35,55 @@ function chirp(out: Float32Array, sr: number, at: number, from: number, to: numb
   addTone(out, sr, { at, f: from, to, glide: 0.012, attack: 0.0004, decay, amp });
 }
 
+interface ChompOpts {
+  crunch: CrunchPreset;
+  /** Teeth snapping together: centre frequency and level. */
+  clack: [number, number];
+  /** Low punch under the bite, Hz from -> to. */
+  thump: [number, number];
+  /** The swallow: start time, Hz from -> to. */
+  gulp: [number, number, number];
+  bubbles: number;
+  length: number;
+}
+
+/** A bite with weight: teeth clack, crunch, a low thump, then a wet gulp and a few bubbles. */
+function chomp(sr: number, rng: Rng, o: ChompOpts): Float32Array {
+  const out = buf(sr, o.length);
+  const [clackF, clackAmp] = o.clack;
+  addModes(out, sr, 0, clackF * rng.range(0.92, 1.08), [{ r: 1, a: 1, d: 0.004 }, { r: 2.3, a: 0.5, d: 0.0025 }, { r: 3.9, a: 0.3, d: 0.0015 }], clackAmp, 0.0003);
+  addNoise(out, sr, rng, { length: 0.008, type: 'hp', f: 2800, decay: 0.0018, amp: clackAmp * 0.6 });
+  mixIn(out, synthCrunch(o.crunch, sr, rng.int(1, 1e9)), sr, 0.004, 0.85);
+  addTone(out, sr, { f: o.thump[0], to: o.thump[1], glide: 0.025, attack: 0.001, decay: 0.055, amp: 0.85 });
+  const [at, from, to] = o.gulp;
+  const g = rng.range(0.94, 1.06);
+  addTone(out, sr, { at, f: from * g, to: to * g, glide: 0.035, attack: 0.004, decay: 0.06, amp: 0.6 });
+  addNoise(out, sr, rng, { at, length: 0.08, f: 750, to: 260, glide: 0.03, attack: 0.003, decay: 0.03, amp: 0.35 });
+  addBubbles(out, sr, rng, { at: at + 0.02, spread: 0.16, count: o.bubbles, f: [500, 1400], amp: 0.2, bunch: 1.4 });
+  return done(out, sr, 1.5);
+}
+
 export const SOUND_DEFS = {
-  eat: { takes: 5, gain: 1, bus: 'world', gap: 0.03, build: (sr, rng) => synthCrunch(CRUNCH_SMALL, sr, rng.int(1, 1e9)) },
-  eatBig: { takes: 4, gain: 1, bus: 'world', build: (sr, rng) => synthCrunch(CRUNCH_BIG, sr, rng.int(1, 1e9)) },
+  eat: {
+    takes: 5,
+    gain: 0.85,
+    bus: 'world',
+    gap: 0.03,
+    build: (sr, rng) => chomp(sr, rng, { crunch: CRUNCH_SMALL, clack: [3200, 0.55], thump: [240, 95], gulp: [0.055, 430, 170], bubbles: 2, length: 0.35 }),
+  },
+  eatMid: {
+    takes: 4,
+    gain: 0.92,
+    bus: 'world',
+    gap: 0.03,
+    build: (sr, rng) => chomp(sr, rng, { crunch: CRUNCH_MID, clack: [2600, 0.65], thump: [170, 62], gulp: [0.085, 310, 115], bubbles: 3, length: 0.45 }),
+  },
+  eatBig: {
+    takes: 4,
+    gain: 1,
+    bus: 'world',
+    build: (sr, rng) => chomp(sr, rng, { crunch: CRUNCH_BIG, clack: [2100, 0.75], thump: [120, 44], gulp: [0.13, 220, 80], bubbles: 5, length: 0.6 }),
+  },
   boost: {
     takes: 3,
     gain: 0.57,

@@ -59,13 +59,15 @@ export class FishDrawer {
     for (const p of this.pools.values()) p.begin();
   }
 
-  draw(f: DrawableFish, alpha: number, appear = 1, scaleMul = 1): void {
+  /** `bulge` above 0 fattens and shortens the body (a swallow), below 0 stretches it. */
+  draw(f: DrawableFish, alpha: number, appear = 1, scaleMul = 1, bulge = 0): void {
     const pool = this.pool(f.def.id);
     this.p.set(lerp(f.prevX, f.x, alpha), lerp(f.prevY, f.y, alpha), f.z);
     this.e.set(f.roll, f.yaw, f.pitch, 'YZX');
     this.q.setFromEuler(this.e);
     const a = appear >= 1 ? 1 : Math.max(0.001, easeOutBack(appear));
-    this.s.setScalar(f.len * a * scaleMul);
+    const size = f.len * a * scaleMul;
+    this.s.set(size * (1 - bulge * 0.45), size * (1 + bulge), size * (1 + bulge * 0.8));
     this.m.compose(this.p, this.q, this.s);
     pool.push(this.m, f.phase, f.swimAmp, f.jaw, f.alert, f.flash, f.tint ?? 0);
   }

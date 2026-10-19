@@ -30,6 +30,20 @@ export const CRUNCH_SMALL: CrunchPreset = {
   drive: 2.4,
 };
 
+export const CRUNCH_MID: CrunchPreset = {
+  length: 0.28,
+  thump: { from: 260, to: 85, decay: 0.022, level: 0.7 },
+  bites: [
+    { at: 0, grains: [7, 10], spread: 0.1, level: 1 },
+    { at: 0.11, grains: [3, 5], spread: 0.07, level: 0.55 },
+  ],
+  grainLength: [0.003, 0.016],
+  band: [900, 3400],
+  crackle: { count: [7, 12], band: [2600, 6200], level: 0.5 },
+  body: { cutoff: 700, decay: 0.05, level: 0.42 },
+  drive: 2.1,
+};
+
 export const CRUNCH_BIG: CrunchPreset = {
   length: 0.4,
   thump: { from: 200, to: 62, decay: 0.035, level: 0.85 },

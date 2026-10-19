@@ -287,6 +287,18 @@ button {
   text-shadow:
     0 2px 0 rgba(0, 40, 70, 0.6),
     0 4px 16px rgba(0, 20, 40, 0.5);
+  transform-origin: left center;
+}
+
+.hud-score.bump {
+  animation: score-bump 0.22s ease-out;
+}
+
+@keyframes score-bump {
+  30% {
+    scale: 1.12;
+    color: #fff4c4;
+  }
 }
 
 .hud-combo {
@@ -426,6 +438,21 @@ button {
   box-shadow:
     inset 0 1px 3px rgba(0, 0, 0, 0.5),
     0 0 0 1.5px rgba(125, 255, 155, 0.55);
+}
+
+.hud-growth-segs .seg.tick {
+  animation: seg-tick 0.3s ease-out;
+}
+
+@keyframes seg-tick {
+  25% {
+    scale: 1.06 1.3;
+    filter: brightness(1.6);
+    box-shadow:
+      inset 0 1px 3px rgba(0, 0, 0, 0.5),
+      0 0 0 2px rgba(170, 255, 195, 0.9),
+      0 0 14px rgba(125, 255, 155, 0.7);
+  }
 }
 
 .hud-growth-segs .seg-num {
@@ -946,6 +973,18 @@ body.touch .boost-ring {
 .popup.power {
   color: #fff6b0;
   font-size: 24px;
+}
+
+.popup.big {
+  font-size: 28px;
+}
+
+.popup.big.x2 {
+  font-size: 32px;
+}
+
+.popup.big.x3 {
+  font-size: 36px;
 }
 
 @keyframes pop-in {

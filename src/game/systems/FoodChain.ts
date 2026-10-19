@@ -5,6 +5,12 @@ export function playerCanEat(stage: Stage, tier: Tier): boolean {
   return tier < 4 && tier <= stage;
 }
 
+/** How big a mouthful a fish is for the player, from 1 (its own size class) down to 0.25 (tiny fry). */
+export function mealSize(stage: Stage, tier: Tier): number {
+  const gap = stage - tier;
+  return gap <= 0 ? 1 : gap === 1 ? 0.5 : 0.25;
+}
+
 /** Anything bigger than the player's current stage is a threat. */
 export function isThreat(stage: Stage, tier: Tier): boolean {
   return !playerCanEat(stage, tier);

@@ -488,8 +488,17 @@ export class Effects {
     }
   }
 
-  eatBurst(x: number, y: number, color: Color, size: number): void {
+  /** `meal` 0..1 scales the impact; (mouthX, mouthY) is where the swallower's gill bubbles come from. */
+  eatBurst(x: number, y: number, color: Color, size: number, meal = 0.5, mouthX = x, mouthY = y): void {
     const s = Math.max(0.6, size);
+    this.glow.emit(x, y, 0.5, 0, 0, 0, 0.1 + 0.08 * meal, (0.5 + 0.5 * meal) * s, (1.2 + 1.2 * meal) * s, WHITE, PKind.Glow, 0, 0, 0.55 + 0.35 * meal);
+    for (let i = 0; i < this.n(2 + meal * 6); i++) {
+      const a = Math.random() * Math.PI * 2;
+      const v = (1.5 + Math.random() * 2.5) * s;
+      tmp.copy(color).offsetHSL(0, 0, (Math.random() - 0.6) * 0.2);
+      this.soft.emit(x, y, 0.35, Math.cos(a) * v, Math.sin(a) * v + 0.8, (Math.random() - 0.5) * v * 0.5, 0.6 + Math.random() * 0.5, (0.12 + 0.1 * meal) * s, 0.03, tmp, PKind.Dot, 3.5, -2.2, 1);
+    }
+    this.bubbleBurst(mouthX, mouthY, 0.45, 2 + meal * 5, 0.07 + 0.04 * meal, 0.15, 0.9);
     for (let i = 0; i < this.n(10 + s * 6); i++) {
       const a = Math.random() * Math.PI * 2;
       const v = (1.2 + Math.random() * 2.4) * s;

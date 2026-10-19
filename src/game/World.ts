@@ -19,7 +19,7 @@ import type { PredatorState } from './ai/PredatorBrain';
 import { SpatialHash } from './ai/SpatialHash';
 import type { Fish } from './entities/Fish';
 import { Player, puffKnock, type MoveBounds } from './entities/Player';
-import { isThreat, playerCanEat } from './systems/FoodChain';
+import { isThreat, mealSize, playerCanEat } from './systems/FoodChain';
 import { Growth } from './systems/Growth';
 import { Lives } from './systems/Lives';
 import { Scoring, computeLevelBonus, starsFor, type LevelBonus } from './systems/Scoring';
@@ -54,7 +54,8 @@ export interface LevelResult {
 }
 
 export interface WorldEvents {
-  eat: { x: number; y: number; points: number; multiplier: number; combo: number; frenzy: 0 | 1 | 2; tier: Tier; species: SpeciesId; gold: boolean };
+  /** `meal`: how big a mouthful it was for the player, 0.25..1 (see mealSize). */
+  eat: { x: number; y: number; points: number; multiplier: number; combo: number; frenzy: 0 | 1 | 2; tier: Tier; species: SpeciesId; gold: boolean; meal: number };
   golden: { x: number; y: number; coins: number };
   challenge: { index: number; label: string };
   /** A level feature hurt the player (stun, no life lost). */
@@ -97,6 +98,15 @@ export interface WorldOptions {
 
 const PLAYER_Z = 0.35;
 const tmpColor = new Color();
+
+/** An eaten fish being pulled into the player's mouth. */
+interface Swallow {
+  f: Fish;
+  x: number;
+  y: number;
+  t: number;
+  dur: number;
+}
 
 export class World {
   readonly scene = new Scene();
@@ -153,6 +163,7 @@ export class World {
   private readonly target = new Vector2();
   private readonly cone: SuctionCone = { x: 0, y: 0, dirX: 1, dirY: 0, reach: 1, cosHalf: 1 };
   private readonly view: ViewRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
+  private readonly swallows: Swallow[] = [];
   private readonly rng: Rng;
   private attractX = 0;
   private attractDir = 1;
@@ -549,15 +560,17 @@ export class World {
     const p = this.player;
     this.feature?.onEat?.(f);
     f.alive = false;
+    const meal = mealSize(this.growth.stage, f.tier);
     const res = this.scoring.eat(f.tier);
     const grow = this.growth.add(1);
     this.challenges.onEat(f.def.id, res.combo);
     if (f.stunned > 0) this.stat('stunEat');
-    p.jaw = 1;
-    p.jawTarget = 0;
-    p.squash = 0.14;
+    p.chomp(meal);
+    f.flash = 1;
+    f.jaw = f.jawTarget = 0;
+    this.swallows.push({ f, x: f.x, y: f.y, t: 0, dur: 0.08 + 0.08 * meal });
     tmpColor.set(f.golden ? '#ffd257' : f.def.colors.mid);
-    this.effects.eatBurst(f.x, f.y, tmpColor, Math.max(0.5, f.len * 0.9));
+    this.effects.eatBurst(f.x, f.y, tmpColor, Math.max(0.5, f.len * 0.9), meal, p.mouthX, p.mouthY);
     this.events.emit('eat', {
       x: f.x,
       y: f.y,
@@ -568,6 +581,7 @@ export class World {
       tier: f.tier,
       species: f.def.id,
       gold: res.gold,
+      meal,
     });
     if (f.golden && this.mode === 'play') {
       this.scoring.startGoldFrenzy();
@@ -819,12 +833,13 @@ export class World {
     }
     this.feature?.drawFish?.(this.drawer, alpha);
     this.greatWhite?.draw(this.drawer, alpha, dt);
+    this.drawSwallows(px, py, dt);
     if (p.visible) {
       const blink = p.shield > 0 && p.shield < 1 ? (Math.sin(this.simTime * 30) > 0 ? 1 : 0.9) : 1;
       p.z = PLAYER_Z;
       p.tint = this.scoring.goldTime > 0 ? 0.22 + 0.12 * Math.sin(this.simTime * 8) : this.playerShade;
       const puff = p.puffLevel;
-      this.drawer.draw(p, alpha, 1, (1 + p.squash) * blink * (1 + PUFF_ABILITY.swell * puff));
+      this.drawer.draw(p, alpha, 1, blink * (1 + PUFF_ABILITY.swell * puff), p.squash);
       if (this.puffShell) {
         this.puffShell.visible = puff > 0.05;
         if (this.puffShell.visible) {
@@ -837,6 +852,30 @@ export class World {
       this.puffShell.visible = false;
     }
     this.drawer.end();
+  }
+
+  /** Eaten fish shrink into the mouth, just behind the player's head, instead of vanishing. */
+  private drawSwallows(px: number, py: number, dt: number): void {
+    const p = this.player;
+    const reach = p.len * 0.3;
+    const mx = px + Math.cos(p.headingAngle) * reach;
+    const my = py + Math.sin(p.headingAngle) * reach;
+    for (let i = this.swallows.length - 1; i >= 0; i--) {
+      const s = this.swallows[i];
+      s.t += dt / s.dur;
+      if (s.t >= 1 || !p.visible) {
+        this.swallows.splice(i, 1);
+        continue;
+      }
+      const f = s.f;
+      const k = s.t * s.t;
+      f.x = f.prevX = s.x + (mx - s.x) * k;
+      f.y = f.prevY = s.y + (my - s.y) * k;
+      f.z = PLAYER_Z - 0.08;
+      f.flash = 1 - s.t * 0.6;
+      const shrink = Math.max(0.04, 1 - s.t * (0.6 + 0.4 * s.t));
+      this.drawer.draw(f, 1, 1, (f.golden ? f.scaleMul * 1.3 : f.scaleMul) * shrink);
+    }
   }
 
   /** Threats that are hunting the player (for off-screen arrows). */

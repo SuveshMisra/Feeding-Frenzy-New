@@ -28,6 +28,8 @@ import { AdaptiveQuality, PRESETS, lowerLevel, resolveQuality, type QualityLevel
 /** 'won' covers the celebration before the results: no pausing, so the clear can't be thrown away. */
 type AppState = 'title' | 'intro' | 'playing' | 'won' | 'paused' | 'ended';
 
+const HIT_STOP = { scale: 0.08, cooldown: 0.3 };
+
 const ENV_INTENSITY = 0.75;
 const HEMI_WITH_ENV = 0.4;
 
@@ -68,6 +70,10 @@ export class App {
   private hero: HeroId = 'finn';
   private slow = { t: 0, dur: 1, scale: 1 };
   private punch = 0;
+  /** Small zoom-in on each bite, decaying back to 0. */
+  private nibble = 0;
+  private hitStop = 0;
+  private lastHitStop = 0;
   private portraitDismissed = false;
   private debug: DebugPanel | null = null;
   private readonly thumbs = new Map<SpeciesId, string>();
@@ -190,6 +196,8 @@ export class App {
     this.loop.timeScale = 1;
     this.slow.t = 0;
     this.punch = 0;
+    this.nibble = 0;
+    this.hitStop = 0;
     this.post.calm();
     this.input.enabled = false;
     this.hud.visible = false;
@@ -212,6 +220,7 @@ export class App {
     this.loop.simulate = true;
     this.loop.timeScale = 1;
     this.slow.t = 0;
+    this.hitStop = 0;
     const world = this.loadWorld(index, 'play');
     this.hud.attach(world, this.chainFor(world.level));
     this.hud.visible = true;
@@ -374,19 +383,29 @@ export class App {
     const sfx = this.audio.sfx;
     const pan = (x: number) => clamp((x - this.rig.center.x) / Math.max(1, this.rig.viewW * 0.5), -1, 1) * 0.8;
     ev.on('eat', (e) => {
+      const meal = e.meal;
+      const full = meal >= 1;
       const cls = e.multiplier === 3 ? 'x3' : e.multiplier === 2 ? 'x2' : '';
-      this.hud.popup(e.x, e.y, `+${e.points}`, cls);
-      sfx.play(e.tier >= 3 ? 'eatBig' : 'eat', {
+      this.hud.popup(e.x, e.y, `+${e.points}`, full && e.tier >= 2 ? `${cls} big` : cls);
+      this.hud.ate();
+      sfx.play(e.tier >= 3 ? 'eatBig' : e.tier === 2 ? 'eatMid' : 'eat', {
         pan: pan(e.x),
-        pitch: (1 + Math.min(e.combo, 12) * 0.018 + (e.tier === 1 ? 0.06 : 0)) * (0.95 + Math.random() * 0.1),
+        pitch: (1 + Math.min(e.combo, 12) * 0.015) * (0.94 + Math.random() * 0.12),
+        volume: 0.7 + 0.3 * meal,
       });
-      if (e.combo >= 2) this.audio.comboChime(e.combo, pan(e.x));
+      this.audio.comboChime(e.combo, pan(e.x));
+      this.audio.duckMusic(0.12 + 0.18 * meal, 0.08, 0.12);
+      const p = w.player;
+      this.rig.kick(e.x - p.x, e.y - p.y, this.rig.viewH * 0.3 * (0.3 + 0.7 * meal));
+      this.nibble = Math.max(this.nibble, 0.008 + 0.017 * meal);
+      if (full) this.hitStopFor(0.02 + 0.017 * e.tier);
+      if (e.tier >= 2) this.rig.addTrauma(0.05 * e.tier * meal);
+      if (this.input.usingTouch && this.save.data.settings.shake) navigator.vibrate?.(full ? 10 + 6 * e.tier : 6);
       if (e.frenzy) {
         this.hud.banner(e.frenzy === 2 ? 'DOUBLE FRENZY!' : 'FRENZY!', `x${e.multiplier} points`, 'frenzy', 1.3);
         sfx.play('frenzy');
         this.audio.duckMusic(0.3, 0.6);
       }
-      if (e.tier >= 2) this.rig.addTrauma(0.05 * e.tier);
     });
     ev.on('grow', (e) => {
       this.slowMo(1.1, 0.3);
@@ -642,6 +661,14 @@ export class App {
     this.slow = { t: duration, dur: duration, scale };
   }
 
+  /** A near-freeze of a few frames that gives a bite weight. Rapid chains of bites only get the first. */
+  private hitStopFor(seconds: number): void {
+    const now = performance.now();
+    if (now - this.lastHitStop < HIT_STOP.cooldown * 1000) return;
+    this.lastHitStop = now;
+    this.hitStop = Math.max(this.hitStop, seconds);
+  }
+
   // ---------------------------------------------------------------- loop
 
   private update(dt: number): void {
@@ -651,19 +678,27 @@ export class App {
   private render(alpha: number, dt: number, realDt: number): void {
     this.debug?.begin();
     const w = this.world;
+    let timeScale = 1;
     if (this.slow.t > 0) {
       this.slow.t = Math.max(0, this.slow.t - realDt);
       const k = 1 - this.slow.t / this.slow.dur;
-      this.loop.timeScale = lerp(this.slow.scale, 1, smoothstep(0.45, 1, k));
-    } else {
-      this.loop.timeScale = 1;
+      timeScale = lerp(this.slow.scale, 1, smoothstep(0.45, 1, k));
     }
+    if (this.hitStop > 0) {
+      this.hitStop = Math.max(0, this.hitStop - realDt);
+      timeScale *= HIT_STOP.scale;
+    }
+    this.loop.timeScale = timeScale;
+    let zoom = 1;
     if (this.punch > 0) {
       this.punch = Math.max(0, this.punch - realDt * 1.6);
-      this.rig.zoomPunch = 1 - Math.sin(Math.min(1, this.punch) * Math.PI) * 0.05;
-    } else {
-      this.rig.zoomPunch = 1;
+      zoom = 1 - Math.sin(Math.min(1, this.punch) * Math.PI) * 0.05;
     }
+    if (this.nibble > 0) {
+      this.nibble = this.nibble < 1e-4 ? 0 : this.nibble * Math.exp(-realDt * 12);
+      zoom *= 1 - this.nibble;
+    }
+    this.rig.zoomPunch = zoom;
     if (this.state === 'intro') this.screens.updateIntro(realDt);
     if (w) {
       shared.uTime.value += dt;

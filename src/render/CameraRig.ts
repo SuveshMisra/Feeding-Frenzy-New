@@ -38,6 +38,9 @@ export class CameraRig {
   private readonly lead = new Vector2();
   private readonly shakeOffset = new Vector3();
   private readonly shakeRot = new Vector3();
+  /** Directional nudge (bites) that springs back to centre. */
+  private readonly kickPos = new Vector2();
+  private readonly kickVel = new Vector2();
 
   constructor(aspect: number) {
     this.camera = new PerspectiveCamera(CAMERA.fov, aspect, 0.5, 420);
@@ -73,9 +76,19 @@ export class CameraRig {
     this.trauma = Math.min(1, this.trauma + amount);
   }
 
+  /** Jolts the view along (dx, dy); `strength` is the initial speed in world units per second. */
+  kick(dx: number, dy: number, strength: number): void {
+    const d = Math.hypot(dx, dy);
+    if (d < 1e-4) return;
+    this.kickVel.x += (dx / d) * strength;
+    this.kickVel.y += (dy / d) * strength;
+  }
+
   snap(x: number, y: number): void {
     this.viewH = this.viewHTarget;
     this.trauma = 0;
+    this.kickPos.set(0, 0);
+    this.kickVel.set(0, 0);
     this.zoomPunch = 1;
     this.lead.set(0, 0);
     this.center.set(x, y);
@@ -93,6 +106,12 @@ export class CameraRig {
     this.center.y = damp(this.center.y, ty, CAMERA.followLambda * 0.8, dt);
     this.clampCenter();
     this.trauma = Math.max(0, this.trauma - dt * 1.4);
+    const kp = this.kickPos;
+    const kv = this.kickVel;
+    kv.x += (-kp.x * 260 - kv.x * 24) * dt;
+    kv.y += (-kp.y * 260 - kv.y * 24) * dt;
+    kp.x += kv.x * dt;
+    kp.y += kv.y * dt;
     this.apply(dt);
   }
 
@@ -123,7 +142,8 @@ export class CameraRig {
     const t2 = this.shakeEnabled ? this.trauma * this.trauma : 0;
     const n = this.noise;
     const t = this.time * 18;
-    this.shakeOffset.set(n(t, 1.3) * 0.55 * t2, n(t, 7.1) * 0.45 * t2, 0);
+    const kick = this.shakeEnabled ? 1 : 0;
+    this.shakeOffset.set(n(t, 1.3) * 0.55 * t2 + this.kickPos.x * kick, n(t, 7.1) * 0.45 * t2 + this.kickPos.y * kick, 0);
     this.shakeRot.set(0, 0, n(t, 13.7) * 0.035 * t2);
     const cam = this.camera;
     cam.position.set(this.center.x + this.shakeOffset.x, this.center.y + d * 0.07 + this.shakeOffset.y, d);

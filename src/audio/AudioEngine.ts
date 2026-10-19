@@ -38,6 +38,7 @@ export class AudioEngine {
   private volumes = { music: 0.6, sfx: 0.8 };
   private biome: LevelDef['biome'] | null = null;
   private paused = false;
+  private duck = { until: 0, depth: 0 };
 
   get running(): boolean {
     return this.ctx?.state === 'running';
@@ -156,21 +157,23 @@ export class AudioEngine {
     this.worldMuffle.frequency.setTargetAtTime(on ? 600 : 18000, now, on ? 0.12 : 0.3);
   }
 
-  /** Dips the music under a big moment, then lets it swell back. */
-  duckMusic(depth: number, seconds: number): void {
+  /** Dips the music under a big moment, then lets it swell back. A shallower dip never cuts a deeper one short. */
+  duckMusic(depth: number, seconds: number, release = 0.5): void {
     if (!this.ctx || this.paused) return;
     const g = this.musicDuck.gain;
     const now = this.ctx.currentTime;
+    if (now < this.duck.until && depth < this.duck.depth) return;
+    this.duck = { until: now + seconds, depth };
     g.cancelScheduledValues(now);
-    g.setTargetAtTime(1 - depth, now, 0.03);
-    g.setTargetAtTime(1, now + seconds, 0.5);
+    g.setTargetAtTime(1 - depth, now, 0.015);
+    g.setTargetAtTime(1, now + seconds, release);
   }
 
-  /** A combo note on the song's own scale, climbing with each fish. */
+  /** A note on the song's own scale for every bite, climbing with the combo. */
   comboChime(combo: number, pan: number): void {
     if (!this.notes || !this.running) return;
-    const midi = this.music.ladder(Math.max(0, combo - 2));
-    this.sfx.playBuffer(this.notes.get(this.music.chime, midi), { volume: 0.22 + Math.min(combo, 12) * 0.01, pan });
+    const midi = this.music.ladder(Math.max(0, combo - 1));
+    this.sfx.playBuffer(this.notes.get(this.music.chime, midi), { volume: 0.2 + Math.min(combo, 12) * 0.012, pan, delay: 0.025 });
   }
 
   suspend(): void {

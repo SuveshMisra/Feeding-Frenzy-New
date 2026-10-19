@@ -31,6 +31,7 @@ export class Sfx {
 
   /** Renders queued sounds until `budgetMs` has passed. */
   pump(budgetMs: number): void {
+    if (!this.ctx) return;
     const end = performance.now() + budgetMs;
     while (this.queue.length && performance.now() < end) this.takes(this.queue.shift()!);
   }

@@ -105,8 +105,11 @@ export class Player {
   len: number = PLAYER.lengthByStage[0];
   private lenVel = 0;
   lenTarget: number = PLAYER.lengthByStage[0];
-  /** Squash on bite / stretch when darting. */
+  /** Swallow bulge: above 0 fattens the body and shortens it, below 0 stretches it thin. */
   squash = 0;
+  private squashVel = 0;
+  /** Seconds the jaw keeps slamming shut after a bite. */
+  private jawSnap = 0;
 
   alive = true;
   visible = true;
@@ -278,6 +281,7 @@ export class Player {
     this.shieldIsPickup = false;
     this.stun = 0;
     this.jaw = 0;
+    this.squash = this.squashVel = 0;
     this.boostTime = 0;
     this.boostCooldown = 0;
     this.suckTime = 0;
@@ -311,7 +315,10 @@ export class Player {
     const c = 9;
     this.lenVel += ((this.lenTarget - this.len) * k - this.lenVel * c) * dt;
     this.len += this.lenVel * dt;
-    this.squash = damp(this.squash, 0, 8, dt);
+    // Underdamped, so a gulp bulges, overshoots into a stretch and wobbles back.
+    this.squashVel += (-this.squash * 300 - this.squashVel * 15) * dt;
+    this.squash += this.squashVel * dt;
+    this.jawSnap = Math.max(0, this.jawSnap - dt);
 
     if (!this.alive) return;
 
@@ -403,7 +410,15 @@ export class Player {
     this.roll = damp(this.roll, clamp(turnRate * 0.05, -0.45, 0.45), 6, dt);
     const norm = Math.min(1.4, spd / this.maxSpeed);
     this.phase = (this.phase + dt * Math.PI * 2 * (1.1 + norm * 2.4 + this.boostLevel * 1.6)) % (Math.PI * 20);
-    this.jaw = damp(this.jaw, this.jawTarget, this.jawTarget > this.jaw ? 22 : 9, dt);
+    this.jaw = damp(this.jaw, this.jawTarget, this.jawTarget > this.jaw ? 22 : this.jawSnap > 0 ? 34 : 9, dt);
+  }
+
+  /** A bite lands: the jaw slams shut and the body bulges with the swallow. `meal` is 0..1. */
+  chomp(meal: number): void {
+    this.jaw = 1;
+    this.jawTarget = 0;
+    this.jawSnap = 0.12;
+    this.squashVel += 1.6 + 2.6 * meal;
   }
 
   /** Swim amplitude multiplier for the shader. */

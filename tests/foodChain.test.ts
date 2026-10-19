@@ -3,6 +3,7 @@ import {
   circlesTouch,
   edibleTierWeights,
   isThreat,
+  mealSize,
   playerCanEat,
   threatTierWeights,
 } from '../src/game/systems/FoodChain';
@@ -36,6 +37,15 @@ describe('food chain', () => {
       expect(sum(edibleTierWeights(s))).toBeCloseTo(1);
       expect(sum(threatTierWeights(s))).toBeCloseTo(1);
     }
+  });
+
+  it('rates a fish of the player\'s own size class as a full meal and smaller fry as snacks', () => {
+    expect(mealSize(1, 1)).toBe(1);
+    expect(mealSize(2, 2)).toBe(1);
+    expect(mealSize(3, 3)).toBe(1);
+    expect(mealSize(2, 1)).toBe(0.5);
+    expect(mealSize(3, 2)).toBe(0.5);
+    expect(mealSize(3, 1)).toBe(0.25);
   });
 
   it('detects touching circles', () => {

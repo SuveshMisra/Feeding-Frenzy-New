@@ -93,6 +93,28 @@ describe('Player movement', () => {
     expect(p.maxSpeed).toBeCloseTo(base * HAZARD.speedBoost.factor);
   });
 
+  it('bulges with a swallow, wobbles past rest and settles, bigger for a bigger meal', () => {
+    const peak = (meal: number): { max: number; min: number; end: number } => {
+      const p = spawned();
+      p.chomp(meal);
+      let max = 0;
+      let min = 0;
+      for (let t = 0; t < 0.6; t += DT) {
+        p.update(DT, null, null, bounds);
+        max = Math.max(max, p.squash);
+        min = Math.min(min, p.squash);
+      }
+      return { max, min, end: p.squash };
+    };
+    const snack = peak(0.25);
+    const meal = peak(1);
+    expect(meal.max).toBeGreaterThan(snack.max);
+    expect(meal.max).toBeGreaterThan(0.1);
+    expect(meal.max).toBeLessThan(0.2);
+    expect(meal.min).toBeLessThan(0);
+    expect(Math.abs(meal.end)).toBeLessThan(0.01);
+  });
+
   it('is protected while the respawn shield lasts', () => {
     const p = new Player();
     p.spawn(0, 10, 2.5);

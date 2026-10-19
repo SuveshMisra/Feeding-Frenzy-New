@@ -46,6 +46,12 @@ export interface ChainEntry {
 const MAX_POPUPS = 24;
 const MAX_ARROWS = 6;
 
+function restartAnimation(el: HTMLElement, cls: string): void {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+
 const SHARK_ICON =
   '<svg viewBox="0 0 48 24" aria-hidden="true"><path d="M1 6.5L5.5 12.4L1.5 18.5L8.5 15.6C14 16.6 20 16.9 25 16.5L27.6 20.5L29.6 16.2C36 15.6 42 14.4 47 12.2C42.5 9.8 37 8.6 31 8.3L27.5 2L24.4 8.1C18 8.2 12.5 9 8.4 10.2Z"/></svg>';
 
@@ -293,6 +299,13 @@ export class Hud {
     const el = h('div', { class: `popup ${cls}`, text });
     this.layer.append(el);
     this.popups.push({ el, x, y, t: 0, life });
+  }
+
+  /** Each bite bumps the score and flashes the growth segment it fed. */
+  ate(): void {
+    restartAnimation(this.scoreEl, 'bump');
+    const seg = this.segs.find((s) => s.parentElement!.classList.contains('active'));
+    if (seg) restartAnimation(seg.parentElement!, 'tick');
   }
 
   pulseGrowth(): void {
