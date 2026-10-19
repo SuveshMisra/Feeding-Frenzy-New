@@ -1,6 +1,6 @@
 import { Color, Mesh, Scene, Vector2, type Material } from 'three';
 import { createNoise2D } from 'simplex-noise';
-import type { LevelDef } from '../config/levels';
+import { levelEvents, type BiomeId, type LevelDef } from '../config/levels';
 import { SPECIES, type SpeciesId } from '../config/species';
 import { HEROES, bonusLives, cooldownMul, shieldMul, speedMul, type HeroId, type UpgradeKind } from '../config/progression';
 import { LIVES, PUFF_ABILITY, RESPAWN_SHIELD_S, SUCTION, TIER_POINTS, type Stage, type Tier } from '../config/tuning';
@@ -26,8 +26,12 @@ import { Scoring, computeLevelBonus, starsFor, type LevelBonus } from './systems
 import { GOLDEN, Spawner } from './systems/Spawner';
 import { makeCone, pullToward, type SuctionCone } from './systems/Suction';
 import { ChallengeTracker, challengeLabel } from './systems/Challenges';
+import { dangerLevel, endlessTuning } from './systems/Endless';
 import { GreatWhite } from './hazards/GreatWhite';
 import { Hazards } from './hazards/Hazards';
+import { createBoss } from './bosses';
+import { BOSS, type BossBase } from './bosses/BossBase';
+import { EventDirector } from './events/EventDirector';
 import { createFeature } from './features';
 import { spikeMaterial, spikeShellGeometry } from './features/art';
 import type { FlowVec, LevelFeature } from './features/types';
@@ -53,6 +57,20 @@ export interface LevelResult {
   challenges: boolean[];
 }
 
+/** How an endless run went. */
+export interface EndlessResult {
+  levelIndex: number;
+  biome: BiomeId;
+  score: number;
+  /** Seconds survived. */
+  time: number;
+  /** Highest danger level reached. */
+  danger: number;
+  fishEaten: number;
+  maxCombo: number;
+  goldenCoins: number;
+}
+
 export interface WorldEvents {
   /** `meal`: how big a mouthful it was for the player, 0.25..1 (see mealSize). */
   eat: { x: number; y: number; points: number; multiplier: number; combo: number; frenzy: 0 | 1 | 2; tier: Tier; species: SpeciesId; gold: boolean; meal: number };
@@ -63,6 +81,8 @@ export interface WorldEvents {
   /** Something happened in the level's signature mechanic; App picks the sound and text. */
   feature: { kind: string; x: number; y: number };
   grow: { stage: Stage; x: number; y: number };
+  /** Endless: the danger level went up. */
+  danger: { level: number; greatWhite: boolean };
   death: { lives: number; x: number; y: number; gameOver: boolean };
   respawn: { x: number; y: number };
   gameOver: { score: number };
@@ -123,10 +143,18 @@ export class World {
   readonly feature: LevelFeature | null;
   /** Ocean II's patrolling great white (play mode only). */
   readonly greatWhite: GreatWhite | null;
+  /** A chapter finale's boss (play mode only): beating it, not growing, clears the level. */
+  readonly boss: BossBase | null;
+  /** Mid-level events: bait balls, whale lunges, riptides (play mode only). */
+  readonly director: EventDirector | null;
   readonly challenges: ChallengeTracker;
   readonly events = new Emitter<WorldEvents>();
   readonly level: LevelDef;
   readonly mode: WorldMode;
+  /** An endless run: growth never completes and the danger level climbs until the lives run out. */
+  readonly endless: boolean;
+  /** Endless danger level (1 at the start, see systems/Endless). */
+  dangerLevel = 1;
   /** Shop upgrade: multiplies every shield the player gets. */
   readonly shieldMul: number;
   phase: WorldPhase = 'play';
@@ -175,6 +203,7 @@ export class World {
   constructor(opts: WorldOptions) {
     this.level = opts.level;
     this.mode = opts.mode;
+    this.endless = this.mode === 'play' && !!opts.level.endless;
     this.input = opts.input;
     this.viewport = opts.viewport;
     this.rng = new Rng(opts.level.seed + 5);
@@ -217,12 +246,17 @@ export class World {
       surfaceY: H,
       floorAt: this.env.floorAt,
     };
-    this.growth = new Growth(opts.level.fishPerStage);
+    this.growth = new Growth(opts.level.fishPerStage, this.endless);
+    // Boss fights start fully grown.
+    if (this.mode === 'play' && opts.level.boss) this.growth.fillUp();
     this.spawner = new Spawner(opts.level, this.bounds);
     this.hazards = new Hazards(this, opts.quality);
-    this.feature = createFeature(opts.level.feature, this, opts.quality);
+    this.feature = opts.level.feature ? createFeature(opts.level.feature, this, opts.quality) : null;
     this.greatWhite = this.mode === 'play' && opts.level.greatWhite ? new GreatWhite(this, opts.level.greatWhite) : null;
-    const feature = this.feature;
+    this.boss = this.mode === 'play' && opts.level.boss ? createBoss(opts.level.boss, this) : null;
+    const events = this.mode === 'play' ? levelEvents(opts.level) : null;
+    this.director = events ? new EventDirector(this, events) : null;
+    const hasFlow = !!this.feature?.flowAt || !!this.director;
     const noiseRng = new Rng(opts.level.seed + 17);
     this.ai = {
       dt: 1 / 60,
@@ -235,7 +269,7 @@ export class World {
       chaseSpeed: opts.level.difficulty.chaseSpeed,
       detectMul: 1,
       hiddenTime: 0,
-      flow: feature?.flowAt ? (x, y, out) => feature.flowAt!(x, y, out) : null,
+      flow: hasFlow ? (x, y, out) => this.flowAt(x, y, out) : null,
       onPredatorState: (fish, from, to) => {
         if (to === 'alert' && this.mode === 'play') this.events.emit('alert', { fish });
         this.events.emit('predator', { fish, from, to });
@@ -245,20 +279,32 @@ export class World {
     const startX = this.mode === 'attract' ? 0 : -W / 2 + 14;
     const startY = H * 0.42;
     this.player.spawn(startX, startY, this.mode === 'play' ? this.respawnShield : 0);
-    this.player.setStage(1, false);
+    this.player.setStage(this.growth.stage, false);
     if (this.mode === 'attract') {
       this.player.alive = false;
       this.player.visible = false;
       this.attractX = this.rng.range(-W / 4, W / 4);
       this.rig.viewHTarget = this.rig.stageViewHeight(1);
     } else {
-      this.rig.viewHTarget = this.rig.stageViewHeight(0);
+      this.rig.viewHTarget = this.rig.stageViewHeight(this.growth.stage - 1);
     }
     this.rig.snap(this.mode === 'attract' ? this.attractX : startX, startY);
     this.syncAiPlayer();
     this.spawner.populate(this.spawnContext());
     this.hazards.build();
     this.feature?.build();
+    this.boss?.build();
+    if (this.endless) this.applyDanger();
+  }
+
+  /** Endless: tunes predators, chases, events, the great white and points to the danger level. */
+  private applyDanger(): void {
+    const t = endlessTuning(this.dangerLevel);
+    this.spawner.extraThreats = t.extraPredators;
+    this.ai.chaseSpeed = this.level.difficulty.chaseSpeed * t.chaseMul;
+    this.scoring.pointsMul = t.pointsMul;
+    if (this.director) this.director.rate = t.eventRate;
+    if (this.greatWhite) this.greatWhite.enabled = t.greatWhite;
   }
 
   get stage(): Stage {
@@ -279,11 +325,14 @@ export class World {
     this.env.setSurfaceY(y);
   }
 
-  /** Water current at a point (zero unless the level has currents). */
+  /** Water current at a point: the level's currents plus any riptide. */
   flowAt(x: number, y: number, out: FlowVec): FlowVec {
-    if (this.feature?.flowAt) return this.feature.flowAt(x, y, out);
-    out.x = 0;
-    out.y = 0;
+    if (this.feature?.flowAt) this.feature.flowAt(x, y, out);
+    else {
+      out.x = 0;
+      out.y = 0;
+    }
+    this.director?.addFlow(x, y, out);
     return out;
   }
 
@@ -386,6 +435,14 @@ export class World {
     const playing = this.mode === 'play';
     if (playing && this.started && this.phase === 'play') this.time += dt;
     if (!this.started) this.player.shield = Math.max(this.player.shield, this.respawnShield);
+    if (this.endless) {
+      const lv = dangerLevel(this.time);
+      if (lv > this.dangerLevel) {
+        this.dangerLevel = lv;
+        this.applyDanger();
+        this.events.emit('danger', { level: lv, greatWhite: endlessTuning(lv).greatWhite && !endlessTuning(lv - 1).greatWhite });
+      }
+    }
 
     // Player
     const p = this.player;
@@ -411,7 +468,7 @@ export class World {
       else if (p.ability === 'puff') this.tryPuff();
       else this.tryBoost(target, dir);
     }
-    if (this.feature?.flowAt) this.feature.flowAt(p.x, p.y, p.drift);
+    if (this.ai.flow) this.flowAt(p.x, p.y, p.drift);
     p.update(dt, target, dir, this.bounds);
     this.syncAiPlayer();
 
@@ -438,6 +495,8 @@ export class World {
     if (playing && this.started) this.collide();
     this.hazards.update(dt);
     this.greatWhite?.update(dt);
+    this.boss?.update(dt);
+    this.director?.update(dt);
     this.scoring.update(dt);
     this.spawner.update(dt, this.spawnContext());
     this.updatePhase(dt);
@@ -559,6 +618,7 @@ export class World {
   private eat(f: Fish): void {
     const p = this.player;
     this.feature?.onEat?.(f);
+    this.director?.onEat(f);
     f.alive = false;
     const meal = mealSize(this.growth.stage, f.tier);
     const res = this.scoring.eat(f.tier);
@@ -699,7 +759,8 @@ export class World {
         if (!f.alive || playerCanEat(this.growth.stage, f.tier)) continue;
         nearest = Math.min(nearest, Math.hypot(f.x - x, f.y - y));
       }
-      const score = nearest - Math.hypot(x - this.rig.center.x, y - this.rig.center.y) * 0.25 - (this.greatWhite?.threatAt(x, y) ?? 0) * 30;
+      const threat = Math.max(this.greatWhite?.threatAt(x, y) ?? 0, this.boss?.threatAt(x, y) ?? 0, this.director?.threatAt(x, y) ?? 0);
+      const score = nearest - Math.hypot(x - this.rig.center.x, y - this.rig.center.y) * 0.25 - threat * 30;
       if (score > best.score) best = { x, y, score };
     }
     p.spawn(best.x, best.y, this.respawnShield);
@@ -722,6 +783,8 @@ export class World {
         d = Math.max(d, w);
       }
       if (this.greatWhite) d = Math.max(d, this.greatWhite.danger);
+      if (this.boss) d = Math.max(d, this.boss.danger);
+      if (this.director) d = Math.max(d, this.director.danger);
     }
     this.danger += (d - this.danger) * Math.min(1, dt * (d > this.danger ? 4 : 1.2));
   }
@@ -747,11 +810,38 @@ export class World {
     };
   }
 
+  /** Endless runs have no time or no-death bonus: the score is what was eaten and earned. */
+  endlessResult(): EndlessResult {
+    return {
+      levelIndex: this.level.index,
+      biome: this.level.biome,
+      score: this.scoring.score,
+      time: this.time,
+      danger: this.dangerLevel,
+      fishEaten: this.scoring.fishEaten,
+      maxCombo: this.scoring.maxCombo,
+      goldenCoins: this.goldenCoins,
+    };
+  }
+
+  /** The boss is beaten: the level completes once its defeat has played out. */
+  bossDefeated(x: number, y: number): void {
+    if (this.phase !== 'play') return;
+    const p = this.player;
+    this.phase = 'complete';
+    this.phaseTimer = BOSS.defeatDelay;
+    p.invincible = true;
+    p.flash = 1;
+    this.effects.growBurst(x, y, 6);
+    this.events.emit('celebrate', { x, y });
+  }
+
   /** Awards points not tied to eating (pearls, gems, mine kills). */
   award(points: number, x: number, y: number, label: string, color?: string): void {
     if (!this.counting) return;
-    this.scoring.add(points);
-    this.events.emit('bonus', { x, y, points, label, color });
+    const pts = Math.round(points * this.scoring.pointsMul);
+    this.scoring.add(pts);
+    this.events.emit('bonus', { x, y, points: pts, label, color });
   }
 
   gainLife(x: number, y: number): void {
@@ -806,6 +896,7 @@ export class World {
     }
     this.hazards.render(alpha, dt);
     this.feature?.render(alpha, dt);
+    this.boss?.render(alpha, dt);
 
     const v = this.rig.viewRect(this.view);
     this.drawer.begin();
@@ -833,6 +924,8 @@ export class World {
     }
     this.feature?.drawFish?.(this.drawer, alpha);
     this.greatWhite?.draw(this.drawer, alpha, dt);
+    this.boss?.draw(this.drawer, alpha, dt);
+    this.director?.draw(this.drawer, alpha, dt);
     this.drawSwallows(px, py, dt);
     if (p.visible) {
       const blink = p.shield > 0 && p.shield < 1 ? (Math.sin(this.simTime * 30) > 0 ? 1 : 0.9) : 1;
@@ -907,6 +1000,10 @@ export class World {
   }
 
   cheatComplete(): void {
+    if (this.boss) {
+      this.bossDefeated(this.player.x, this.player.y);
+      return;
+    }
     this.growth.forceStage(3);
     this.player.setStage(3);
     this.growth.points = this.growth.perStage - 1;
@@ -918,6 +1015,8 @@ export class World {
     this.spawner.clear();
     this.hazards.dispose();
     this.feature?.dispose();
+    this.boss?.dispose();
+    this.director?.dispose();
     this.drawer.dispose();
     this.effects.dispose();
     this.env.dispose();

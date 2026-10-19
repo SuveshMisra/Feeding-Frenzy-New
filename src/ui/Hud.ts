@@ -3,10 +3,12 @@ import type { World } from '../game/World';
 import type { Fish } from '../game/entities/Fish';
 import type { Tier } from '../config/tuning';
 import type { AbilityKind } from '../config/progression';
+import type { FeatureHud } from '../game/features/types';
 import { HAZARD } from '../config/tuning';
 import { playerCanEat } from '../game/systems/FoodChain';
 import { challengeLabel, progressText } from '../game/systems/Challenges';
 import { GOLD_FRENZY } from '../game/systems/Scoring';
+import { dangerProgress } from '../game/systems/Endless';
 import { FISH_ICON, formatScore, h } from './dom';
 
 type PowerKind = 'speed' | 'shield' | 'gold';
@@ -74,12 +76,25 @@ export class Hud {
   private readonly segs: HTMLElement[] = [];
   private readonly growthText: HTMLElement;
   private readonly stageText: HTMLElement;
+  private readonly bossEl: HTMLElement;
+  private readonly bossName: HTMLElement;
+  private readonly bossHint: HTMLElement;
+  private readonly bossSegs: HTMLElement;
+  private bossFills: HTMLElement[] = [];
+  private readonly dangerEl: HTMLElement;
+  private readonly dangerNum: HTMLElement;
+  private readonly dangerMul: HTMLElement;
+  private readonly dangerFill: HTMLElement;
+  private lastDanger = 0;
   private readonly chainEl: HTMLElement;
   private readonly powersEl: HTMLElement;
   private readonly powerEls: Record<PowerKind, { el: HTMLElement; ring: HTMLElement }>;
   private readonly featureEl: HTMLElement;
   private readonly featureLabel: HTMLElement;
   private readonly featureFill: HTMLElement;
+  private readonly eventEl: HTMLElement;
+  private readonly eventLabel: HTMLElement;
+  private readonly eventFill: HTMLElement;
   private readonly challengesEl: HTMLElement;
   private challengeRows: { el: HTMLElement; progress: HTMLElement; state: string }[] = [];
   private challengeTimer = 0;
@@ -118,6 +133,21 @@ export class Hud {
     this.stageText = h('span', { class: 'hud-stage', text: 'Stage 1' });
     this.growthText = h('span', { class: 'hud-count', text: '0/20' });
     this.growthEl = h('div', { class: 'hud-growth' }, h('div', { class: 'hud-growth-label' }, this.stageText, this.growthText), segWrap);
+    this.bossName = h('span', { class: 'hud-boss-name' });
+    this.bossHint = h('span', { class: 'hud-boss-hint', text: 'Bite the weak spot!' });
+    this.bossSegs = h('div', { class: 'hud-boss-segs' });
+    this.bossEl = h('div', { class: 'hud-boss' }, h('div', { class: 'hud-boss-label' }, this.bossName, this.bossHint), this.bossSegs);
+    this.dangerNum = h('b', { class: 'hud-danger-num', text: '1' });
+    this.dangerMul = h('span', { class: 'hud-danger-mul' });
+    this.dangerFill = h('div', { class: 'hud-danger-fill' });
+    this.dangerEl = h(
+      'div',
+      { class: 'hud-danger', attrs: { title: 'Danger rises over time. Points rise with it.' } },
+      h('span', { class: 'hud-danger-label', text: 'Danger' }),
+      this.dangerNum,
+      h('div', { class: 'hud-danger-bar' }, this.dangerFill),
+      this.dangerMul,
+    );
     this.chainEl = h('div', { class: 'hud-chain' });
     const pauseBtn = h('button', {
       class: 'icon-btn hud-pause',
@@ -135,6 +165,9 @@ export class Hud {
     this.featureLabel = h('span', { class: 'hud-feature-label' });
     this.featureFill = h('div', { class: 'hud-feature-fill' });
     this.featureEl = h('div', { class: 'hud-feature' }, this.featureLabel, h('div', { class: 'hud-feature-bar' }, this.featureFill));
+    this.eventLabel = h('span', { class: 'hud-feature-label' });
+    this.eventFill = h('div', { class: 'hud-feature-fill' });
+    this.eventEl = h('div', { class: 'hud-feature' }, this.eventLabel, h('div', { class: 'hud-feature-bar' }, this.eventFill));
     this.challengesEl = h('div', { class: 'hud-challenges' });
     this.layer = h('div', { class: 'hud-layer' });
     this.bannerTitle = h('div', { class: 'banner-title' });
@@ -166,7 +199,7 @@ export class Hud {
         'div',
         { class: 'hud-top' },
         h('div', { class: 'hud-left' }, this.livesEl, this.scoreEl, this.comboEl, this.challengesEl),
-        h('div', { class: 'hud-center' }, this.growthEl, this.featureEl, this.powersEl),
+        h('div', { class: 'hud-center' }, this.growthEl, this.bossEl, this.dangerEl, this.featureEl, this.eventEl, this.powersEl),
         h('div', { class: 'hud-right' }, this.chainEl, pauseBtn),
       ),
       this.boostEl,
@@ -212,6 +245,21 @@ export class Hud {
       return { tier: c.tier, el };
     });
     this.featureEl.className = 'hud-feature';
+    this.eventEl.className = 'hud-feature';
+    const boss = world?.mode === 'play' ? world.boss : null;
+    this.growthEl.classList.toggle('gone', !!boss);
+    this.dangerEl.classList.toggle('show', !!world?.endless);
+    this.lastDanger = 0;
+    this.bossEl.className = boss ? `hud-boss show boss-${boss.def.kind}` : 'hud-boss';
+    this.bossName.textContent = boss?.name ?? '';
+    // Phase 1 is the rightmost segment, so the whole bar drains right to left.
+    this.bossFills = [];
+    this.bossSegs.replaceChildren();
+    for (let i = (boss?.def.phases ?? 0) - 1; i >= 0; i--) {
+      const fill = h('div', { class: 'bseg-fill' });
+      this.bossFills[i] = fill;
+      this.bossSegs.append(h('div', { class: 'bseg' }, h('div', { class: 'bseg-lag' }), fill));
+    }
     this.challengeTimer = 0;
     this.challengeRows = (world?.challenges.defs ?? []).map((def) => {
       const progress = h('span', { class: 'hc-progress' });
@@ -253,16 +301,19 @@ export class Hud {
 
   private updateFeature(): void {
     const w = this.world!;
-    const f = w.feature?.hud() ?? null;
-    const el = this.featureEl;
+    this.meter(this.featureEl, this.featureLabel, this.featureFill, w.feature?.hud() ?? null);
+    this.meter(this.eventEl, this.eventLabel, this.eventFill, w.director?.hud() ?? null, 'event');
+  }
+
+  private meter(el: HTMLElement, label: HTMLElement, fill: HTMLElement, f: FeatureHud | null, extra = ''): void {
     if (!f) {
       el.classList.remove('show');
       return;
     }
     const meter = f.value !== undefined;
-    el.className = `hud-feature show tone-${f.tone} ${meter ? 'meter' : 'chip'} ${f.alarm ? 'alarm' : ''}`.trim();
-    if (this.featureLabel.textContent !== f.label) this.featureLabel.textContent = f.label;
-    if (meter) this.featureFill.style.transform = `scaleX(${Math.max(0, Math.min(1, f.value!)).toFixed(3)})`;
+    el.className = `hud-feature show tone-${f.tone} ${meter ? 'meter' : 'chip'} ${f.alarm ? 'alarm' : ''} ${extra}`.trim();
+    if (label.textContent !== f.label) label.textContent = f.label;
+    if (meter) fill.style.transform = `scaleX(${Math.max(0, Math.min(1, f.value!)).toFixed(3)})`;
   }
 
   set visible(v: boolean) {
@@ -308,6 +359,45 @@ export class Hud {
     if (seg) restartAnimation(seg.parentElement!, 'tick');
   }
 
+  /** Endless: the danger level just went up. */
+  dangerUp(): void {
+    restartAnimation(this.dangerEl, 'up');
+  }
+
+  private updateDanger(): void {
+    const w = this.world!;
+    if (!w.endless) return;
+    const lv = w.dangerLevel;
+    if (lv !== this.lastDanger) {
+      this.lastDanger = lv;
+      this.dangerNum.textContent = String(lv);
+      this.dangerMul.textContent = `x${Number(w.scoring.pointsMul.toFixed(2))} pts`;
+      this.dangerEl.style.setProperty('--heat', Math.min(1, (lv - 1) / 6).toFixed(3));
+    }
+    this.dangerFill.style.transform = `scaleX(${dangerProgress(w.time).toFixed(3)})`;
+  }
+
+  /** A weak-point bite landed: the boss bar jolts. */
+  bossHit(): void {
+    restartAnimation(this.bossEl, 'hit');
+  }
+
+  private updateBoss(): void {
+    const boss = this.world!.boss;
+    if (!boss) return;
+    const hp = boss.health;
+    this.bossFills.forEach((fill, i) => {
+      const v = hp.segment(i);
+      fill.style.transform = `scaleX(${v.toFixed(3)})`;
+      const seg = fill.parentElement!;
+      seg.classList.toggle('active', i === hp.phase && !hp.defeated);
+      seg.classList.toggle('empty', v <= 0);
+      (seg.firstElementChild as HTMLElement).style.transform = `scaleX(${v.toFixed(3)})`;
+    });
+    this.bossEl.classList.toggle('open', boss.exposed && !boss.defeated);
+    this.bossEl.classList.toggle('beaten', boss.defeated);
+  }
+
   pulseGrowth(): void {
     this.growthEl.classList.remove('pulse');
     void this.growthEl.offsetWidth;
@@ -340,13 +430,13 @@ export class Hud {
     const g = w.growth;
     for (let i = 0; i < 3; i++) {
       const stageIdx = i + 1;
-      const fill = g.complete || stageIdx < g.stage ? 1 : stageIdx === g.stage ? g.stageProgress : 0;
+      const fill = g.full || stageIdx < g.stage ? 1 : stageIdx === g.stage ? g.stageProgress : 0;
       this.segs[i].style.transform = `scaleX(${fill})`;
-      this.segs[i].parentElement!.classList.toggle('active', stageIdx === g.stage && !g.complete);
+      this.segs[i].parentElement!.classList.toggle('active', stageIdx === g.stage && !g.full);
       this.segs[i].parentElement!.classList.toggle('done', fill >= 1);
     }
-    this.stageText.textContent = g.complete ? 'Fully grown!' : `Stage ${g.stage}`;
-    this.growthText.textContent = g.complete ? '' : `${g.points}/${g.perStage}`;
+    this.stageText.textContent = g.full ? (w.endless ? 'Fully grown \u2013 survive!' : 'Fully grown!') : `Stage ${g.stage}`;
+    this.growthText.textContent = g.full ? '' : `${g.points}/${g.perStage}`;
     if (g.stage !== this.lastStage) {
       if (this.lastStage) this.pulseGrowth();
       this.lastStage = g.stage;
@@ -382,6 +472,8 @@ export class Hud {
     this.power('shield', p.alive && p.shieldIsPickup ? p.shield : 0, HAZARD.shieldDuration * w.shieldMul);
     this.power('gold', s.goldTime, GOLD_FRENZY.duration);
     this.updateFeature();
+    this.updateBoss();
+    this.updateDanger();
     this.updateChallenges(dt);
 
     const ready = p.alive && p.boostCooldown <= 0;

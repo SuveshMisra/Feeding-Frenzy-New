@@ -101,11 +101,31 @@ function greatWhite(k: number): GreatWhiteDef {
   return { first: mix(45, 30), every: [mix(85, 55), mix(110, 72)], speed: mix(1.1, 1.28), chase: mix(0.2, 0.38) };
 }
 
+export type BossKind = 'angler' | 'kraken';
+
+/** A chapter finale: the player starts fully grown and wins by beating the boss instead of growing. */
+export interface BossDef {
+  kind: BossKind;
+  name: string;
+  phases: number;
+  /** Weak-point bites needed to clear each phase. */
+  hitsPerPhase: number;
+}
+
+/** Mid-level events (see EventDirector). */
+export type EventId = 'baitBall' | 'whale' | 'riptide';
+
+export interface LevelEvents {
+  /** Seconds between events. */
+  every: readonly [number, number];
+  pool: readonly EventId[];
+}
+
 export type ChapterId = 1 | 2;
 
 export const CHAPTERS: readonly { id: ChapterId; name: string; from: number }[] = [
   { id: 1, name: 'Ocean I', from: 0 },
-  { id: 2, name: 'Ocean II', from: 10 },
+  { id: 2, name: 'Ocean II', from: 11 },
 ];
 
 export interface LevelDef {
@@ -128,11 +148,16 @@ export interface LevelDef {
   difficulty: { chaseSpeed: number; detectRadius: number; predators: [number, number, number] };
   /** Score thresholds for the 2nd and 3rd star. Completing the level gives the 1st. */
   stars: [number, number];
-  /** The level's signature mechanic. */
-  feature: FeatureId;
+  /** The level's signature mechanic (boss levels have none: the boss is the mechanic). */
+  feature?: FeatureId;
   featureOpts?: FeatureOpts;
   /** A great white that crosses the screen every so often, eating everything in its path. */
   greatWhite?: GreatWhiteDef;
+  boss?: BossDef;
+  /** Overrides the ocean's default mid-level events (see `levelEvents`). */
+  events?: LevelEvents;
+  /** An endless run (see `endlessLevel`): growth never completes and the run ends on game over. */
+  endless?: boolean;
   /** One line on the intro card explaining the mechanic. */
   tip: string;
   challenges: ChallengeDef[];
@@ -914,8 +939,50 @@ export const LEVELS: LevelDef[] = [
     seed: 10110,
   },
   {
-    id: 'reef2',
+    id: 'abyssKing',
     index: 10,
+    chapter: 1,
+    name: 'The Abyss King',
+    subtitle: 'Something vast is holding the only light',
+    biome: 'abyss',
+    biomeOverride: {
+      fog: { top: '#123048', mid: '#08162a', bottom: '#020610' },
+      hemi: { sky: '#2a5070', intensity: 0.7 },
+      playerLight: 1.4,
+      bloom: 1.2,
+    },
+    world: { width: 64, height: 28 },
+    fishPerStage: 50,
+    roster: {
+      1: ['lanternfish', 'glimmerfish'],
+      2: ['hatchetfish'],
+      3: ['viperfish'],
+      4: ['anglerfish'],
+    },
+    cover: 'anglerKing',
+    hazards: { oysters: 2, jellyfish: 2, mines: 0 },
+    difficulty: { chaseSpeed: 0.9, detectRadius: 7.5, predators: [0, 0, 0] },
+    stars: [15000, 21000],
+    boss: { kind: 'angler', name: 'The Abyss King', phases: 3, hitsPerPhase: 3 },
+    tip: 'Never touch the lure. Make it lunge and miss, then bite the lure while it\u2019s dazed!',
+    challenges: [
+      { kind: 'feature', key: 'bossDodge', n: 6, label: 'Make it crash 6 times' },
+      { kind: 'noDeath' },
+      { kind: 'under', seconds: 200 },
+    ],
+    music: {
+      root: 45,
+      scale: [0, 1, 3, 5, 7, 8, 10],
+      progression: [0, 1, 5, 1],
+      tempo: 100,
+      brightness: 0.5,
+      pluckDensity: 1.3,
+    },
+    seed: 21021,
+  },
+  {
+    id: 'reef2',
+    index: 11,
     chapter: 2,
     name: 'Reef at Dusk',
     subtitle: 'The colours fade, the hunters wake',
@@ -965,7 +1032,7 @@ export const LEVELS: LevelDef[] = [
   },
   {
     id: 'kelp2',
-    index: 11,
+    index: 12,
     chapter: 2,
     name: 'Kelp Storm',
     subtitle: 'The forest bends to the swell',
@@ -1012,7 +1079,7 @@ export const LEVELS: LevelDef[] = [
   },
   {
     id: 'wreck2',
-    index: 12,
+    index: 13,
     chapter: 2,
     name: 'Ghost Fleet',
     subtitle: 'The drowned fleet stirs',
@@ -1061,7 +1128,7 @@ export const LEVELS: LevelDef[] = [
   },
   {
     id: 'ice2',
-    index: 13,
+    index: 14,
     chapter: 2,
     name: 'Glacier Collapse',
     subtitle: 'The shelf is coming down',
@@ -1107,7 +1174,7 @@ export const LEVELS: LevelDef[] = [
   },
   {
     id: 'abyss2',
-    index: 14,
+    index: 15,
     chapter: 2,
     name: 'Hadal Deep',
     subtitle: 'Below the last light',
@@ -1152,7 +1219,7 @@ export const LEVELS: LevelDef[] = [
   },
   {
     id: 'mangrove2',
-    index: 15,
+    index: 16,
     chapter: 2,
     name: 'Storm Surge',
     subtitle: 'Wild tides, hungry skies',
@@ -1199,7 +1266,7 @@ export const LEVELS: LevelDef[] = [
   },
   {
     id: 'canyon2',
-    index: 16,
+    index: 17,
     chapter: 2,
     name: 'Rip Currents',
     subtitle: 'The canyon pulls both ways',
@@ -1243,7 +1310,7 @@ export const LEVELS: LevelDef[] = [
   },
   {
     id: 'ruins2',
-    index: 17,
+    index: 18,
     chapter: 2,
     name: 'Awakened City',
     subtitle: 'Every statue has opened its eyes',
@@ -1290,7 +1357,7 @@ export const LEVELS: LevelDef[] = [
   },
   {
     id: 'crystal2',
-    index: 18,
+    index: 19,
     chapter: 2,
     name: 'Resonance',
     subtitle: 'One crack sings through the cave',
@@ -1334,7 +1401,7 @@ export const LEVELS: LevelDef[] = [
   },
   {
     id: 'volcanic2',
-    index: 19,
+    index: 20,
     chapter: 2,
     name: 'Eruption',
     subtitle: 'The rift breaks open',
@@ -1378,6 +1445,51 @@ export const LEVELS: LevelDef[] = [
     },
     seed: 20120,
   },
+  {
+    id: 'kraken',
+    index: 21,
+    chapter: 2,
+    name: 'The Kraken',
+    subtitle: 'The city was its nest all along',
+    biome: 'ruins',
+    biomeOverride: {
+      fog: { top: '#2a5068', mid: '#0e2a38', bottom: '#030c12', density: 0.03 },
+      sun: { color: '#9fc8ff', intensity: 0.9 },
+      hemi: { sky: '#5a8aa0', intensity: 0.65 },
+      caustics: 0.5,
+      shaftIntensity: 0.3,
+      playerLight: 1.3,
+      bloom: 1.1,
+    },
+    world: { width: 64, height: 28 },
+    fishPerStage: 52,
+    roster: {
+      1: ['glassfish', 'cardinalfish', 'crystalTetra'],
+      2: ['angelfish', 'snapper'],
+      3: ['napoleon', 'coelacanth'],
+      4: ['hammerhead'],
+    },
+    cover: 'napoleon',
+    hazards: { oysters: 2, jellyfish: 2, mines: 0 },
+    difficulty: { chaseSpeed: 0.92, detectRadius: 8, predators: [0, 0, 0] },
+    stars: [16000, 22000],
+    boss: { kind: 'kraken', name: 'The Kraken', phases: 3, hitsPerPhase: 3 },
+    tip: 'Dodge the slams, bite the glowing tentacle tips, then go for the eye!',
+    challenges: [
+      { kind: 'feature', key: 'bossDodge', n: 10, label: 'Dodge 10 tentacle slams' },
+      { kind: 'noDeath' },
+      { kind: 'under', seconds: 220 },
+    ],
+    music: {
+      root: 50,
+      scale: [0, 2, 3, 5, 7, 8, 11],
+      progression: [0, 5, 1, 4],
+      tempo: 104,
+      brightness: 0.6,
+      pluckDensity: 1.3,
+    },
+    seed: 22122,
+  },
 ];
 
 /** Level ids in play order. */
@@ -1417,6 +1529,62 @@ export function chapterOf(index: number): ChapterId {
   return id;
 }
 
+/** A chapter's regular levels in order, without its boss. */
 export function chapterLevels(chapter: ChapterId): LevelDef[] {
+  return LEVELS.filter((l) => l.chapter === chapter && !l.boss);
+}
+
+export function chapterBoss(chapter: ChapterId): LevelDef | undefined {
+  return LEVELS.find((l) => l.chapter === chapter && l.boss);
+}
+
+/** Every level of a chapter in play order, the boss last. */
+export function chapterAll(chapter: ChapterId): LevelDef[] {
   return LEVELS.filter((l) => l.chapter === chapter);
+}
+
+/**
+ * The mid-level events a level can roll, or null for none (boss fights). Ocean I eases them in
+ * a few levels at a time; Ocean II has them all, more often.
+ */
+export function levelEvents(level: LevelDef): LevelEvents | null {
+  if (level.boss) return null;
+  if (level.events) return level.events;
+  if (level.chapter === 2) return { every: [70, 110], pool: ['baitBall', 'whale', 'riptide'] };
+  const n = level.index;
+  return { every: [80, 120], pool: n < 2 ? ['baitBall'] : n < 5 ? ['baitBall', 'riptide'] : ['baitBall', 'whale', 'riptide'] };
+}
+
+/** Beating this level opens endless mode. */
+export const ENDLESS_UNLOCK = 'abyssKing';
+export const ENDLESS_FISH_PER_STAGE = 35;
+
+/** The levels endless mode can be played in: one per biome, Ocean I's originals. */
+export function endlessBases(): LevelDef[] {
+  return chapterLevels(1);
+}
+
+const endlessLevels = new Map<string, LevelDef>();
+
+/**
+ * An endless run in `base`'s biome, with its fish, music and twist. Every event can roll and a
+ * great white joins once the danger level climbs (see game/systems/Endless).
+ */
+export function endlessLevel(base: LevelDef): LevelDef {
+  let lv = endlessLevels.get(base.id);
+  if (!lv) {
+    lv = {
+      ...base,
+      id: `endless-${base.biome}`,
+      subtitle: 'Endless',
+      fishPerStage: ENDLESS_FISH_PER_STAGE,
+      greatWhite: base.greatWhite ?? { first: 8, every: [70, 100], speed: 1.12, chase: 0.25 },
+      events: { every: [70, 110], pool: ['baitBall', 'whale', 'riptide'] },
+      challenges: [],
+      endless: true,
+      seed: base.seed + 909,
+    };
+    endlessLevels.set(base.id, lv);
+  }
+  return lv;
 }

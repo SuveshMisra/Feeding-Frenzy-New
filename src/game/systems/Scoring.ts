@@ -46,6 +46,8 @@ export class Scoring {
   pearls = 0;
   /** Seconds left in a golden frenzy. */
   goldTime = 0;
+  /** Scales every bite and bonus (endless danger). */
+  pointsMul = 1;
 
   get multiplier(): number {
     return multiplierFor(this.combo);
@@ -77,7 +79,7 @@ export class Scoring {
     this.fishEaten++;
     const multiplier = multiplierFor(this.combo);
     const gold = this.goldTime > 0;
-    const points = TIER_POINTS[tier] * multiplier * (gold ? GOLD_FRENZY.mul : 1);
+    const points = Math.round(TIER_POINTS[tier] * multiplier * (gold ? GOLD_FRENZY.mul : 1) * this.pointsMul);
     this.score += points;
     const frenzy: 0 | 1 | 2 =
       this.combo === COMBO.doubleFrenzyAt ? 2 : this.combo === COMBO.frenzyAt ? 1 : 0;

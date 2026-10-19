@@ -1,9 +1,24 @@
-import { CHAPTERS, LEVELS, LEVEL_IDS, chapterLevels, chapterOf, resolveBiome, type ChapterId, type LevelDef } from '../config/levels';
-import { HEROES, HERO_IDS, UPGRADES, heroesFor, upgradeCost, upgradeMax, type HeroId, type UpgradeKind } from '../config/progression';
+import {
+  CHAPTERS,
+  ENDLESS_UNLOCK,
+  LEVELS,
+  LEVEL_IDS,
+  chapterAll,
+  chapterLevels,
+  chapterOf,
+  endlessBases,
+  levelEvents,
+  resolveBiome,
+  type ChapterId,
+  type EventId,
+  type LevelDef,
+} from '../config/levels';
+import { HEROES, HERO_IDS, UPGRADES, endlessHeroes, heroesFor, upgradeCost, upgradeMax, type HeroId, type UpgradeKind } from '../config/progression';
 import { CHALLENGE_COINS, challengeLabel } from '../game/systems/Challenges';
+import { ENDLESS } from '../game/systems/Endless';
 import type { SpeciesId } from '../config/species';
 import { BOOST, PUFF_ABILITY, SUCTION } from '../config/tuning';
-import type { LevelResult } from '../game/World';
+import type { EndlessResult, LevelResult } from '../game/World';
 import { levelOpen, type ControlScheme, type QualitySetting, type SaveStore, type Settings } from '../app/Save';
 import { ABILITY_ICONS } from './Hud';
 import { abilityCooldownFor } from '../game/entities/Player';
@@ -22,12 +37,16 @@ export interface Reward {
 
 export interface ScreenActions {
   play(index: number, hero: HeroId): void;
+  /** An endless run in level `index`'s biome. */
+  playEndless(index: number, hero: HeroId): void;
   buy(kind: UpgradeKind): boolean;
   pickHero(id: HeroId): void;
   resume(): void;
   restart(): void;
   quit(): void;
   levels(): void;
+  /** Back to the endless biome picker. */
+  endless(): void;
   next(): void;
   settings(patch: Partial<Settings>): void;
   fullscreen(): void;
@@ -70,6 +89,16 @@ const LOCK =
   '<svg viewBox="0 0 24 24"><path d="M7 10V7.5a5 5 0 0 1 10 0V10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><rect x="4.5" y="10" width="15" height="11" rx="2.6" fill="currentColor"/><circle cx="12" cy="15.5" r="1.8" fill="#052033"/></svg>';
 
 const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+/** The level whose clear opens endless mode. */
+const ENDLESS_GATE = LEVELS.find((l) => l.id === ENDLESS_UNLOCK)!;
+
+/** Intro-card line for the first level that can roll each mid-level event. */
+const EVENT_NOTES: Record<EventId, string> = {
+  baitBall: 'New: once you grow, bait balls swirl in. Feast while they last!',
+  riptide: 'New: riptides can sweep the water sideways',
+  whale: 'New: a humpback may lunge up from below. Watch for rising bubbles!',
+};
 
 const TIPS = [
   'Predators give up when you swim out of range. Break line of sight and keep moving.',
@@ -114,6 +143,8 @@ export class Screens {
   private tab: { chapter: ChapterId; next: number } | null = null;
   private hovered: Element | null = null;
   private backing = false;
+  /** The paused run is endless (the pause menu offers biomes instead of levels). */
+  private pausedEndless = false;
 
   constructor(
     parent: HTMLElement,
@@ -210,6 +241,14 @@ export class Screens {
           if (!d.seenHowTo) this.showHowTo(() => this.showLevels(), () => this.showTitle());
           else this.showLevels();
         }),
+        this.endlessOpen()
+          ? this.btn('Endless', 'endless-btn', () => this.showEndless())
+          : h(
+              'button',
+              { class: 'btn endless-btn locked', attrs: { disabled: '', title: `Beat ${ENDLESS_GATE.name} to unlock endless mode` } },
+              h('span', { class: 'btn-lock', html: LOCK }),
+              'Endless',
+            ),
         this.btn('Shop', 'shop-btn', () => this.showShop(() => this.showTitle())),
         this.btn('How to play', '', () => this.showHowTo(() => this.showTitle(), () => this.showTitle())),
         this.btn('Settings', '', () => this.showSettings(() => this.showTitle())),
@@ -244,10 +283,14 @@ export class Screens {
     this.mount(el);
   }
 
-  /** A chapter opens with its first level, once the last level of the one before it is cleared. */
+  /**
+   * A chapter opens with its first level, once the boss of the one before it is beaten. Any
+   * record inside it also keeps it open, for saves from before the bosses existed.
+   */
   private chapterOpen(id: ChapterId): boolean {
     const c = CHAPTERS.find((ch) => ch.id === id);
-    return !c || levelOpen(this.save.data, LEVEL_IDS, c.from);
+    const d = this.save.data;
+    return !c || levelOpen(d, LEVEL_IDS, c.from) || chapterAll(c.id).some((lv) => Boolean(d.best[lv.id]));
   }
 
   showLevels(chapter?: ChapterId): void {
@@ -259,7 +302,7 @@ export class Screens {
     else if (!this.tab || this.tab.next !== next) this.tab = { chapter: nextChapter, next };
     const current = this.tab.chapter;
     const open = this.chapterOpen(current);
-    const levels = chapterLevels(current);
+    const levels = chapterAll(current);
     const locked = (id: HeroId) => !d.heroes.includes(id) && !d.settings.testMode;
     let stars = 0;
     let cleared = 0;
@@ -282,12 +325,16 @@ export class Screens {
       const card = h(
         'button',
         {
-          class: `level-card ${status}`,
+          class: `level-card ${status} ${lv.boss ? 'boss' : ''}`.trim(),
           attrs: {
-            'aria-label': `Level ${i + 1}: ${lv.name}, ${playable ? (rec ? `${rec.stars} of 3 stars, best ${formatScore(rec.score)}` : 'not cleared yet') : `locked, clear level ${i} first`}, ${doneCount} of ${done.length} challenges`,
+            'aria-label': `${lv.boss ? 'Boss' : 'Level'} ${i + 1}: ${lv.name}, ${playable ? (rec ? `${rec.stars} of 3 stars, best ${formatScore(rec.score)}` : 'not cleared yet') : `locked, clear level ${i} first`}, ${doneCount} of ${done.length} challenges`,
             'aria-disabled': String(!playable),
           },
-          style: { background: `linear-gradient(180deg, ${b.fog.top} 0%, ${b.fog.mid} 52%, ${b.fog.bottom} 100%)` },
+          style: {
+            background: lv.boss
+              ? `linear-gradient(100deg, #6a0c22 0%, ${b.fog.mid} 42%, ${b.fog.bottom} 78%, #4a0818 100%)`
+              : `linear-gradient(180deg, ${b.fog.top} 0%, ${b.fog.mid} 52%, ${b.fog.bottom} 100%)`,
+          },
           on: {
             click: () => {
               if (!open || !playable) return;
@@ -297,6 +344,7 @@ export class Screens {
           },
         },
         h('div', { class: 'level-num', text: String(i + 1) }),
+        lv.boss ? h('div', { class: 'level-boss-tag', text: 'Boss' }) : null,
         h(
           'div',
           { class: 'level-challenges', attrs: { title: lv.challenges.map((c, k) => `${done[k] ? '\u2713' : '\u2022'} ${challengeLabel(c)}`).join('\n') } },
@@ -324,7 +372,7 @@ export class Screens {
       'div',
       { class: 'chapter-tabs', attrs: { role: 'tablist' } },
       ...CHAPTERS.map((c) => {
-        const list = chapterLevels(c.id);
+        const list = chapterAll(c.id);
         const got = list.reduce((a, lv) => a + (d.best[lv.id]?.stars ?? 0), 0);
         const isOpen = this.chapterOpen(c.id);
         return h(
@@ -389,13 +437,73 @@ export class Screens {
   /** Starts a level, asking which fish to use first when there is a choice. */
   startLevel(index: number, back: () => void): void {
     const options = heroesFor(index, this.save.data.heroes, this.save.data.settings.testMode);
-    if (options.length > 1) this.showHeroPick(index, options, back);
+    const level = LEVELS[index];
+    if (options.length > 1) this.showHeroPick(`Level ${index + 1} \u00b7 ${level.name}`, options, back, (id) => this.act.play(index, id));
     else this.act.play(index, options[0] ?? 'finn');
   }
 
-  private showHeroPick(index: number, options: HeroId[], back: () => void): void {
+  private endlessOpen(): boolean {
+    const d = this.save.data;
+    return d.settings.testMode || Boolean(d.best[ENDLESS_UNLOCK]);
+  }
+
+  /** Endless mode's biome picker: any Ocean I biome whose level has been cleared. */
+  showEndless(): void {
+    const d = this.save.data;
+    const bases = endlessBases();
+    let focus: HTMLElement | null = null;
+    const cards = bases.map((lv) => {
+      const b = resolveBiome(lv);
+      const open = d.settings.testMode || Boolean(d.best[lv.id]);
+      const best = d.endless[lv.biome] ?? 0;
+      const featured = lv.cover ?? lv.roster[3][0] ?? lv.roster[2][0];
+      const card = h(
+        'button',
+        {
+          class: `level-card endless-card ${open ? (best ? 'cleared' : 'new') : 'locked'}`,
+          attrs: {
+            'aria-label': `Endless in ${lv.name}${open ? (best ? `, best ${formatScore(best)}` : ', no runs yet') : `, locked, clear level ${lv.index + 1} first`}`,
+            'aria-disabled': String(!open),
+          },
+          style: { background: `linear-gradient(180deg, ${b.fog.top} 0%, ${b.fog.mid} 52%, ${b.fog.bottom} 100%)` },
+          on: {
+            click: () => {
+              if (!open) return;
+              this.act.click();
+              this.startEndless(lv.index, () => this.showEndless());
+            },
+          },
+        },
+        open ? null : h('div', { class: 'level-lock', html: LOCK }),
+        featured ? h('img', { class: 'level-fish', attrs: { src: this.thumb(featured), alt: '' } }) : null,
+        h('div', { class: 'level-name', text: lv.name }),
+        h('div', { class: 'level-sub', text: lv.subtitle }),
+        h('div', { class: 'level-foot' }, h('div', { class: 'level-best', text: open ? (best ? `Best ${formatScore(best)}` : 'No runs yet') : `Clear level ${lv.index + 1} to unlock` })),
+      );
+      if (!open) card.tabIndex = -1;
+      else if (!focus) focus = card;
+      return card;
+    });
+    const el = h(
+      'div',
+      { class: 'screen levels-screen endless-screen' },
+      h('h2', { text: 'Endless' }),
+      h('p', { class: 'endless-intro', text: `Survive as long as you can. Danger rises every ${ENDLESS.step} seconds, and your points rise with it.` }),
+      h('div', { class: 'level-board' }, h('div', { class: 'level-grid' }, ...cards)),
+      h('div', { class: 'row' }, this.btn('Back', 'ghost', () => this.showTitle()), this.btn('Shop', 'shop-btn', () => this.showShop(() => this.showEndless()))),
+    );
+    this.mount(el, () => this.showTitle(), focus);
+  }
+
+  /** Starts an endless run, asking which fish to use first when there is a choice. */
+  startEndless(index: number, back: () => void): void {
+    const options = endlessHeroes(this.save.data.heroes, this.save.data.settings.testMode);
+    if (options.length > 1) this.showHeroPick(`Endless \u00b7 ${LEVELS[index].name}`, options, back, (id) => this.act.playEndless(index, id));
+    else this.act.playEndless(index, options[0] ?? 'finn');
+  }
+
+  private showHeroPick(eyebrow: string, options: HeroId[], back: () => void, play: (id: HeroId) => void): void {
     const last = this.save.data.hero;
-    const level = LEVELS[index];
     let focus: HTMLElement | null = null;
     const cards = options.map((id) => {
       const def = HEROES[id];
@@ -409,7 +517,7 @@ export class Screens {
             click: () => {
               this.act.click();
               this.act.pickHero(id);
-              this.act.play(index, id);
+              play(id);
             },
           },
         },
@@ -425,7 +533,7 @@ export class Screens {
     const el = h(
       'div',
       { class: 'screen panel hero-screen' },
-      h('div', { class: 'eyebrow', text: `Level ${index + 1} \u00b7 ${level.name}` }),
+      h('div', { class: 'eyebrow', text: eyebrow }),
       h('h2', { text: 'Choose your fish' }),
       h('div', { class: `hero-grid ${cards.length > 2 ? 'three' : ''}`.trim() }, ...cards),
       h('div', { class: 'row' }, this.btn('Back', 'ghost', back)),
@@ -695,20 +803,35 @@ export class Screens {
     const notes: string[] = [];
     if (level.tip) notes.push(level.tip);
     const prev = LEVELS[level.index - 1];
-    if (level.hazards.jellyfish > 0 && !(prev && prev.hazards.jellyfish > 0)) notes.push('Watch out: jellyfish sting and stun you');
-    if (level.hazards.mines > 0 && !(prev && prev.hazards.mines > 0)) notes.push('New: sea mines blow up anything nearby');
-    if (level.greatWhite) notes.push(prev?.greatWhite ? 'A great white patrols these waters' : 'New: a great white patrols these waters. Get out of its path!');
-    if (level.index === 0) {
-      notes.push(touchUi() ? 'Tap the boost button for a quick dash' : 'Left-click to boost');
-      notes.push('Grab pearls from open oysters for big points');
+    if (level.endless) {
+      notes.push(`Danger rises every ${ENDLESS.step} seconds: more hunters, faster chases, more events`);
+      notes.push(`A great white joins the hunt at danger ${ENDLESS.greatWhiteFrom}`);
+    } else {
+      if (level.hazards.jellyfish > 0 && !(prev && prev.hazards.jellyfish > 0)) notes.push('Watch out: jellyfish sting and stun you');
+      if (level.hazards.mines > 0 && !(prev && prev.hazards.mines > 0)) notes.push('New: sea mines blow up anything nearby');
+      if (level.greatWhite) notes.push(prev?.greatWhite ? 'A great white patrols these waters' : 'New: a great white patrols these waters. Get out of its path!');
+      const before = prev ? (levelEvents(prev)?.pool ?? []) : [];
+      for (const id of levelEvents(level)?.pool ?? []) if (!before.includes(id)) notes.push(EVENT_NOTES[id]);
+      if (level.index === 0) {
+        notes.push(touchUi() ? 'Tap the boost button for a quick dash' : 'Left-click to boost');
+        notes.push('Grab pearls from open oysters for big points');
+      }
     }
+    const boss = level.boss;
     const el = h(
       'div',
-      { class: 'intro' },
-      h('div', { class: 'intro-level', text: `Level ${level.index + 1}` }),
-      h('div', { class: 'intro-name', text: level.name }),
-      h('div', { class: 'intro-sub', text: level.subtitle }),
-      h('div', { class: 'intro-goal', text: `Eat ${level.fishPerStage} fish to grow \u00b7 3 growth stages` }),
+      { class: boss ? 'intro boss' : level.endless ? 'intro endless' : 'intro' },
+      h('div', { class: 'intro-level', text: boss ? `Boss \u00b7 Level ${level.index + 1}` : level.endless ? 'Endless' : `Level ${level.index + 1}` }),
+      h('div', { class: 'intro-name', text: boss ? boss.name : level.name }),
+      h('div', { class: 'intro-sub', text: level.endless ? 'How long can you survive?' : level.subtitle }),
+      h('div', {
+        class: 'intro-goal',
+        text: boss
+          ? `You start fully grown \u00b7 Dodge its attacks, then bite its weak spot \u00b7 ${boss.phases} phases`
+          : level.endless
+            ? `Eat ${level.fishPerStage} fish to grow \u00b7 No finish line \u00b7 The run ends when your lives run out`
+            : `Eat ${level.fishPerStage} fish to grow \u00b7 3 growth stages`,
+      }),
       ...notes.map((n, i) => h('div', { class: `intro-note ${i === 0 && level.tip ? 'twist' : ''}`.trim(), text: n })),
     );
     this.root.append(el);
@@ -735,7 +858,8 @@ export class Screens {
     it.done();
   }
 
-  showPause(): void {
+  showPause(endless = this.pausedEndless): void {
+    this.pausedEndless = endless;
     const el = h(
       'div',
       { class: 'screen panel pause-screen' },
@@ -744,8 +868,8 @@ export class Screens {
         'div',
         { class: 'menu' },
         this.btn('Resume', 'primary big', () => this.act.resume()),
-        this.btn('Restart level', '', () => this.act.restart()),
-        this.btn('Level select', '', () => this.act.levels()),
+        this.btn(endless ? 'Restart run' : 'Restart level', '', () => this.act.restart()),
+        endless ? this.btn('Endless biomes', '', () => this.act.endless()) : this.btn('Level select', '', () => this.act.levels()),
         this.btn('Settings', '', () => this.showSettings(() => this.showPause())),
         this.btn('Quit to menu', 'ghost', () => this.act.quit()),
       ),
@@ -838,6 +962,40 @@ export class Screens {
     this.countUp(pay.coins, reward.coins, 1, '+', 1.5);
   }
 
+  /** The end of an endless run: how long it lasted, how bad it got, and the biome's best. */
+  showEndlessResults(r: EndlessResult, isBest: boolean, prevBest: number, coins: number): void {
+    const level = LEVELS[r.levelIndex];
+    const rows: [string, string][] = [
+      ['Time survived', formatTime(r.time)],
+      ['Peak danger', String(r.danger)],
+      ['Fish eaten', String(r.fishEaten)],
+      ['Best combo', String(r.maxCombo)],
+      ['Biome best', formatScore(Math.max(prevBest, r.score))],
+    ];
+    const total = h('b', { class: 'count', text: '0' });
+    const coinsEl = h('b', { class: 'count', text: '+0' });
+    const el = h(
+      'div',
+      { class: 'screen panel results-screen endless-results' },
+      h('div', { class: 'eyebrow', text: `Endless \u00b7 ${level.name}` }),
+      h('h2', { text: 'Run over' }),
+      h('div', { class: 'result-rows' }, ...rows.map(([k, v]) => h('div', { class: 'result-row' }, h('span', { text: k }), h('b', { text: v })))),
+      h('div', { class: 'result-total' }, h('span', { text: 'Score' }), total),
+      isBest ? h('div', { class: 'new-best', text: prevBest > 0 ? `New best! Beat ${formatScore(prevBest)}` : 'New best!' }) : null,
+      h('div', { class: 'result-coins' }, h('span', { class: 'coin-icon', html: COIN }), h('span', { text: 'Coins' }), coinsEl),
+      h(
+        'div',
+        { class: 'row' },
+        this.btn('Go again', 'primary big', () => this.act.restart()),
+        this.btn('Biomes', '', () => this.act.endless()),
+        this.btn('Menu', 'ghost', () => this.act.quit()),
+      ),
+    );
+    this.mount(el);
+    this.countUp(total, r.score, 1.3);
+    this.countUp(coinsEl, coins, 1, '+', 1.5);
+  }
+
   showGameOver(score: number, level: LevelDef): void {
     const best = this.save.data.best[level.id]?.score ?? 0;
     this.tipIndex = (this.tipIndex + 1) % TIPS.length;
@@ -859,7 +1017,7 @@ export class Screens {
     const done = chapterOf(r.levelIndex);
     const doneDef = CHAPTERS.find((c) => c.id === done)!;
     const nextDef = CHAPTERS.find((c) => c.from === r.levelIndex + 1);
-    const list = chapterLevels(done);
+    const list = chapterAll(done);
     const stars = list.reduce((a, lv) => a + (this.save.data.best[lv.id]?.stars ?? 0), 0);
     const totalEl = h('b', { class: 'count', text: '0' });
     const pay = this.rewardRows(reward);
@@ -883,7 +1041,7 @@ export class Screens {
     const el = h(
       'div',
       { class: 'screen panel victory-screen chapter-screen' },
-      h('div', { class: 'eyebrow', text: `${LEVELS[r.levelIndex].name} cleared` }),
+      h('div', { class: 'eyebrow', text: `${LEVELS[r.levelIndex].name} ${LEVELS[r.levelIndex].boss ? 'defeated' : 'cleared'}` }),
       h('h2', { text: `${doneDef.name} complete!` }),
       h('div', { class: 'big-stars', html: starsHtml(r.stars, 'pop') }),
       nextDef
@@ -925,7 +1083,7 @@ export class Screens {
       { class: 'screen panel victory-screen' },
       h('div', { class: 'eyebrow', text: 'All oceans conquered' }),
       h('h2', { text: 'Ruler of the deep!' }),
-      h('p', { class: 'victory-text', text: 'From tiny fry to the terror of the trench. Nothing in the sea is bigger than you now.' }),
+      h('p', { class: 'victory-text', text: 'From tiny fry to the bane of the Kraken. Nothing in the sea is bigger than you now.' }),
       h('div', { class: 'big-stars', html: starsHtml(r.stars, 'pop') }),
       h('div', { class: 'result-rows' }, h('div', { class: 'result-row' }, h('span', { text: `${LEVELS[r.levelIndex].name} score` }), h('b', { text: formatScore(r.score) })), h('div', { class: 'result-row' }, h('span', { text: 'Stars collected' }), h('b', { text: `${stars} / ${LEVELS.length * 3}` }))),
       h('div', { class: 'result-total' }, h('span', { text: 'All levels' }), totalEl),

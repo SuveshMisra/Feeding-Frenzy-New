@@ -1,4 +1,12 @@
+import { LEVEL_IDS } from './levels';
 import type { SpeciesId } from './species';
+
+/** Index of a level by id, so hero unlocks follow the level when the list changes. */
+function levelAt(id: string): number {
+  const i = LEVEL_IDS.indexOf(id);
+  if (i < 0) throw new Error(`Unknown level ${id}`);
+  return i;
+}
 
 export type HeroId = 'finn' | 'gulp' | 'spike';
 export type AbilityKind = 'dash' | 'suction' | 'puff';
@@ -11,9 +19,9 @@ export interface HeroDef {
   ability: AbilityKind;
   abilityName: string;
   blurb: string;
-  /** Level index whose first clear unlocks this hero (-1: always available). */
+  /** Level index whose first clear unlocks this hero (-1: always available). Set from a level id. */
   unlockAfter: number;
-  /** First level index the hero can be picked for. */
+  /** First level index the hero can be picked for. Set from a level id. */
   minLevel: number;
 }
 
@@ -35,8 +43,8 @@ export const HEROES: Record<HeroId, HeroDef> = {
     ability: 'suction',
     abilityName: 'Suck',
     blurb: 'Inhales every small fish in front of it. Whole schools at once!',
-    unlockAfter: 4,
-    minLevel: 4,
+    unlockAfter: levelAt('abyss'),
+    minLevel: levelAt('abyss'),
   },
   spike: {
     id: 'spike',
@@ -45,8 +53,8 @@ export const HEROES: Record<HeroId, HeroDef> = {
     ability: 'puff',
     abilityName: 'Puff',
     blurb: 'Swells into a spiny ball that bounces predators away and stuns them.',
-    unlockAfter: 9,
-    minLevel: 10,
+    unlockAfter: levelAt('volcanic'),
+    minLevel: levelAt('reef2'),
   },
 };
 
@@ -59,6 +67,11 @@ export function isHeroId(v: unknown): v is HeroId {
 /** Heroes the player may pick for a level, given what they've unlocked. Test mode offers every hero everywhere. */
 export function heroesFor(levelIndex: number, unlocked: readonly HeroId[], testMode = false): HeroId[] {
   return HERO_IDS.filter((id) => testMode || (unlocked.includes(id) && levelIndex >= HEROES[id].minLevel));
+}
+
+/** Endless runs come after the campaign's first chapter, so every unlocked fish can go. */
+export function endlessHeroes(unlocked: readonly HeroId[], testMode = false): HeroId[] {
+  return HERO_IDS.filter((id) => testMode || unlocked.includes(id));
 }
 
 export const UPGRADE_STEP = 0.05;
@@ -123,4 +136,9 @@ export const COINS = { base: 20, perStar: 15, scorePer: 250, firstClear: 50 };
 /** Coins awarded for clearing a level. */
 export function coinsFor(score: number, stars: number, firstClear: boolean): number {
   return COINS.base + COINS.perStar * stars + Math.floor(Math.max(0, score) / COINS.scorePer) + (firstClear ? COINS.firstClear : 0);
+}
+
+/** Coins for an endless run: the score's share only, so no bonus for dying straight away. */
+export function endlessCoinsFor(score: number): number {
+  return Math.floor(Math.max(0, score) / COINS.scorePer);
 }

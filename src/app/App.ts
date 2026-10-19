@@ -1,5 +1,5 @@
 import { Scene, Vector2 } from 'three';
-import { CHAPTERS, LEVELS, LEVEL_IDS, resolveBiome, type LevelDef } from '../config/levels';
+import { CHAPTERS, LEVELS, LEVEL_IDS, endlessLevel, resolveBiome, type LevelDef } from '../config/levels';
 import { SPECIES, type SpeciesId } from '../config/species';
 import type { Tier } from '../config/tuning';
 import { Loop } from '../engine/Loop';
@@ -12,7 +12,7 @@ import { CameraRig } from '../render/CameraRig';
 import { PostFX } from '../render/PostFX';
 import { EnvironmentBaker } from '../render/EnvironmentMap';
 import { Input } from '../input/Input';
-import { World, type LevelResult, type WorldMode } from '../game/World';
+import { World, type EndlessResult, type LevelResult, type WorldMode } from '../game/World';
 import { Hud, type ChainEntry } from '../ui/Hud';
 import { Screens, type Reward } from '../ui/Screens';
 import { fishThumbnail } from '../ui/Thumbnails';
@@ -20,7 +20,7 @@ import { h } from '../ui/dom';
 import { AudioEngine } from '../audio/AudioEngine';
 import { DEBUG, DebugPanel } from '../debug/DebugPanel';
 import { SaveStore, levelOpen, type Settings } from './Save';
-import { coinsFor, heroesFor, type HeroId, type UpgradeKind } from '../config/progression';
+import { coinsFor, endlessCoinsFor, endlessHeroes, heroesFor, type HeroId, type UpgradeKind } from '../config/progression';
 import { CHALLENGE_COINS } from '../game/systems/Challenges';
 import type { SoundName } from '../audio/Sfx';
 import { AdaptiveQuality, PRESETS, lowerLevel, resolveQuality, type QualityLevel, type QualityPreset } from './Quality';
@@ -67,6 +67,8 @@ export class App {
   private state: AppState = 'title';
   private readonly timers: number[] = [];
   private levelIndex = 0;
+  /** The current run is endless mode in level `levelIndex`'s biome. */
+  private endless = false;
   private hero: HeroId = 'finn';
   private slow = { t: 0, dur: 1, scale: 1 };
   private punch = 0;
@@ -110,12 +112,14 @@ export class App {
       this.save,
       {
         play: (i, hero) => this.play(i, hero),
+        playEndless: (i, hero) => this.play(i, hero, true),
         buy: (kind) => this.buy(kind),
         pickHero: (id) => this.save.setHero(id),
         resume: () => this.resume(),
-        restart: () => this.play(this.levelIndex, this.hero),
+        restart: () => this.play(this.levelIndex, this.hero, this.endless),
         quit: () => this.toTitle(),
         levels: () => this.toTitle(true),
+        endless: () => this.toTitle('endless'),
         next: () => this.screens.startLevel(Math.min(this.levelIndex + 1, LEVELS.length - 1), () => this.toTitle(true)),
         settings: (patch) => this.applySettings(patch),
         fullscreen: () => this.toggleFullscreen(),
@@ -189,9 +193,10 @@ export class App {
 
   // ---------------------------------------------------------------- flow
 
-  private toTitle(levels = false): void {
+  private toTitle(screen: boolean | 'endless' = false): void {
     this.clearTimers();
     this.state = 'title';
+    this.endless = false;
     this.loop.simulate = true;
     this.loop.timeScale = 1;
     this.slow.t = 0;
@@ -206,22 +211,26 @@ export class App {
     this.levelIndex = idx;
     this.loadWorld(idx, 'attract');
     this.hud.attach(null);
-    if (levels) this.screens.showLevels();
+    if (screen === 'endless') this.screens.showEndless();
+    else if (screen) this.screens.showLevels();
     else this.screens.showTitle();
     this.audio.playLevel(LEVELS[idx], 'title');
     this.audio.music.setDanger(0);
     this.audio.muffle(false);
   }
 
-  private play(index: number, hero: HeroId = 'finn'): void {
+  private play(index: number, hero: HeroId = 'finn', endless = false): void {
     this.clearTimers();
     this.levelIndex = index;
-    this.hero = heroesFor(index, this.save.data.heroes, this.save.data.settings.testMode).includes(hero) ? hero : 'finn';
+    this.endless = endless;
+    const { heroes, settings } = this.save.data;
+    const options = endless ? endlessHeroes(heroes, settings.testMode) : heroesFor(index, heroes, settings.testMode);
+    this.hero = options.includes(hero) ? hero : 'finn';
     this.loop.simulate = true;
     this.loop.timeScale = 1;
     this.slow.t = 0;
     this.hitStop = 0;
-    const world = this.loadWorld(index, 'play');
+    const world = this.loadWorld(index, 'play', endless);
     this.hud.attach(world, this.chainFor(world.level));
     this.hud.visible = true;
     this.state = 'intro';
@@ -231,7 +240,7 @@ export class App {
     });
     this.audio.playLevel(world.level, 'play');
     this.audio.music.setScene('play');
-    this.audio.music.setStage(1);
+    this.audio.music.setStage(world.growth.stage);
     this.audio.muffle(false);
     this.adaptive.reset();
     this.adaptive.enabled = this.save.data.settings.quality === 'auto';
@@ -254,7 +263,7 @@ export class App {
     this.state = 'paused';
     this.loop.simulate = false;
     this.input.enabled = false;
-    this.screens.showPause();
+    this.screens.showPause(this.endless);
     this.audio.muffle(true);
   }
 
@@ -313,18 +322,30 @@ export class App {
     this.input.enabled = false;
     this.adaptive.enabled = false;
     this.hud.visible = false;
-    this.screens.showGameOver(w.scoring.score, w.level);
+    if (w.endless) this.endlessOver(w.endlessResult());
+    else this.screens.showGameOver(w.scoring.score, w.level);
     this.audio.sfx.play('gameOver');
     this.audio.music.stinger('lose');
     this.audio.music.setScene('outro');
   }
 
+  /** Endless runs always end in a game over: bank the score as coins and record the biome best. */
+  private endlessOver(r: EndlessResult): void {
+    const prevBest = this.save.data.endless[r.biome] ?? 0;
+    const isBest = this.save.recordEndless(r.biome, r.score);
+    const coins = endlessCoinsFor(r.score);
+    this.save.addCoins(coins);
+    this.screens.showEndlessResults(r, isBest, prevBest, coins + r.goldenCoins);
+    if (coins > 0) this.later(1500, () => this.audio.sfx.play('coin'));
+    if (isBest) this.later(1100, () => this.audio.sfx.play('challenge'));
+  }
+
   // ---------------------------------------------------------------- world
 
-  private loadWorld(index: number, mode: WorldMode): World {
+  private loadWorld(index: number, mode: WorldMode, endless = false): World {
     this.world?.dispose();
     this.world = null;
-    const level = LEVELS[index];
+    const level = endless ? endlessLevel(LEVELS[index]) : LEVELS[index];
     const q = this.quality;
     const f = this.factory.opts;
     if (f.physical !== q.physical || f.detail !== q.detailNormals || f.texScale !== q.fishTexScale) {
@@ -418,12 +439,20 @@ export class App {
       this.audio.music.setStage(e.stage);
       this.audio.duckMusic(0.35, 1);
     });
+    ev.on('danger', (e) => {
+      this.hud.banner(`Danger ${e.level}!`, e.greatWhite ? 'A great white has caught your scent' : 'More hunters, and they swim faster', 'danger', 2.2);
+      this.hud.dangerUp();
+      sfx.play('dangerUp');
+      this.rig.addTrauma(0.15);
+      this.audio.duckMusic(0.3, 1);
+    });
     ev.on('celebrate', (e) => {
       if (this.state === 'playing') this.state = 'won';
       this.slowMo(1.8, 0.25);
       this.post.shockwave(e.x, e.y, 0.3, 1.6);
       this.punch = 1.4;
-      this.hud.banner('Level complete!', w.level.name, 'complete', 2.6);
+      if (w.boss) this.hud.banner('Boss defeated!', `${w.boss.name} is beaten`, 'complete', 3);
+      else this.hud.banner('Level complete!', w.level.name, 'complete', 2.6);
       sfx.play('complete');
       this.audio.music.stinger('win');
       this.audio.music.setScene('outro');
@@ -652,6 +681,122 @@ export class App {
       case 'giantBite':
         play('giantBite', { pitch: 0.8 });
         this.post.shockwave(x, y, 0.2, 1);
+        break;
+      case 'bossRoar':
+        sfx.play('bossRoar', { pan, pitch: 0.92 + Math.random() * 0.12 });
+        this.rig.addTrauma(0.35);
+        this.post.shockwave(x, y, 0.15, 1.2);
+        this.audio.duckMusic(0.35, 1.4);
+        break;
+      case 'bossWarn':
+        sfx.play('bossWarn', { pan });
+        break;
+      case 'bossLunge':
+        play('bossLunge', { pitch: 0.9 + Math.random() * 0.15, volume: 1.2 });
+        this.rig.addTrauma(0.12);
+        break;
+      case 'bossSwing':
+        play('swoosh', { pitch: 0.5, volume: 1.2 });
+        break;
+      case 'bossCrash':
+      case 'bossSlam':
+        play('bossCrash', { pitch: kind === 'bossSlam' ? 1.1 + Math.random() * 0.1 : 0.95 + Math.random() * 0.1 });
+        this.post.shockwave(x, y, 0.2, 1.1);
+        this.rig.addTrauma(clamp(0.7 - d / 50, 0.15, 0.6));
+        this.audio.duckMusic(0.3, 0.8);
+        if (this.input.usingTouch && this.save.data.settings.shake) navigator.vibrate?.(30);
+        break;
+      case 'bossStun':
+        this.hud.banner(w.boss?.def.kind === 'kraken' ? 'Its eye is open!' : 'Stunned!', 'Bite the weak spot now', 'boss', 1.6);
+        sfx.play('bossStun', { pan });
+        break;
+      case 'bossRecover':
+        this.hud.popup(x, y + 2, 'It recovered!', 'danger', 1.2);
+        break;
+      case 'bossHit':
+        sfx.play('bossHit', { pan, pitch: 0.95 + Math.random() * 0.1 });
+        this.hud.bossHit();
+        this.hitStopFor(0.07);
+        this.rig.addTrauma(0.32);
+        this.post.shockwave(x, y, 0.25, 0.8);
+        this.audio.duckMusic(0.3, 0.4);
+        if (this.input.usingTouch && this.save.data.settings.shake) navigator.vibrate?.(24);
+        break;
+      case 'bossPhase': {
+        const boss = w.boss;
+        const left = boss ? boss.health.left : 0;
+        this.hud.banner('Phase cleared!', left === 1 ? 'Final phase. It is furious!' : 'It is getting angrier', 'boss', 2.2);
+        sfx.play('bossPhase');
+        this.audio.music.stinger('phase');
+        this.slowMo(0.9, 0.3);
+        this.rig.addTrauma(0.4);
+        this.post.shockwave(x, y, 0.3, 1.4);
+        this.audio.duckMusic(0.4, 1.2);
+        break;
+      }
+      case 'bossDefeat':
+        sfx.play('bossDefeat', { pan });
+        this.slowMo(2.6, 0.2);
+        this.hitStopFor(0.12);
+        this.rig.addTrauma(0.85);
+        this.post.shockwave(x, y, 0.5, 2.2);
+        if (this.input.usingTouch && this.save.data.settings.shake) navigator.vibrate?.([40, 60, 80]);
+        break;
+      case 'bossSnap':
+        play('lureSnap', { pitch: 0.7, volume: 1.3 });
+        play('giantBite', { pitch: 1.1, volume: 0.7 });
+        this.rig.addTrauma(0.2);
+        break;
+      case 'bossBite':
+        play('giantBite', { pitch: 0.75 });
+        this.post.shockwave(x, y, 0.2, 1);
+        break;
+      case 'bossInk':
+        this.hud.banner('Ink cloud!', 'Swim close to see', 'danger', 1.6);
+        play('bossInk');
+        break;
+      case 'baitBall':
+        this.hud.banner('Bait ball!', 'A feast swirls in. Eat up before it scatters!', 'grow', 2);
+        sfx.play('baitBall', { pan });
+        this.post.shockwave(x, y, 0.15, 0.8);
+        break;
+      case 'baitEnd':
+        break;
+      case 'whaleWarn':
+        this.hud.banner('Whale below!', 'Get clear of the rising bubbles', 'danger', 2);
+        sfx.play('whaleWarn', { pan });
+        this.audio.duckMusic(0.25, 1.5);
+        break;
+      case 'whaleLunge':
+        sfx.play('whaleLunge', { pan });
+        this.rig.addTrauma(clamp(0.6 - d / 50, 0.15, 0.5));
+        this.post.shockwave(x, y, 0.25, 1.4);
+        this.audio.duckMusic(0.4, 1.6);
+        if (this.input.usingTouch && this.save.data.settings.shake) navigator.vibrate?.(40);
+        break;
+      case 'whaleBreach':
+        play('splash', { pitch: 0.6, volume: 1.4 });
+        this.rig.addTrauma(clamp(0.4 - d / 60, 0.06, 0.3));
+        break;
+      case 'whaleBite':
+        play('giantBite', { pitch: 0.65 });
+        this.post.shockwave(x, y, 0.2, 1);
+        break;
+      case 'riptideWarnE':
+      case 'riptideWarnW':
+        this.hud.banner('Riptide!', `A storm current is about to sweep in from the ${kind === 'riptideWarnE' ? 'left' : 'right'}`, 'tide', 2.2);
+        sfx.play('riptide', { pan: kind === 'riptideWarnE' ? -0.6 : 0.6 });
+        break;
+      case 'riptide':
+        this.rig.addTrauma(0.2);
+        sfx.play('swoosh', { pitch: 0.5, volume: 1.2 });
+        break;
+      case 'riptideGust':
+        sfx.play('swoosh', { pan, pitch: 0.45 + Math.random() * 0.1, volume: 0.7 });
+        this.rig.addTrauma(0.06);
+        break;
+      case 'riptideEnd':
+        this.hud.popup(x, y + 1.2, 'Calm waters', 'bonus', 1.3);
         break;
     }
   }

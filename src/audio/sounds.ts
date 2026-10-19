@@ -703,6 +703,236 @@ export const SOUND_DEFS = {
       return done(out, sr, 1.5);
     },
   },
+  bossRoar: {
+    takes: 2,
+    gain: 0.95,
+    bus: 'world',
+    gap: 0.8,
+    build: (sr, rng) => {
+      // A huge throat: detuned low partials with a slow growl, swelling and falling away.
+      const out = buf(sr, 2.6);
+      const f = rng.range(52, 60);
+      for (const [h, a] of [
+        [1, 0.9],
+        [1.5, 0.45],
+        [2, 0.5],
+        [3.02, 0.25],
+        [4.1, 0.12],
+      ]) {
+        addTone(out, sr, { f: f * h * 1.25, to: f * h * 0.8, glide: 0.9, attack: 0.25, hold: 0.7, decay: 0.45, amp: a, vibrato: [5.5, 0.03], tremolo: [23, 0.55] });
+      }
+      addNoise(out, sr, rng, { length: 1.9, type: 'bp', f: 420, to: 180, glide: 0.8, q: 1.2, attack: 0.3, decay: 0.5, amp: 0.7 });
+      addNoise(out, sr, rng, { length: 1.6, f: 90, attack: 0.4, decay: 0.6, amp: 0.8 });
+      addBubbles(out, sr, rng, { at: 0.2, spread: 1.6, count: 30, f: [120, 600], amp: 0.25, bunch: 1.4 });
+      return done(out, sr, 1.6);
+    },
+  },
+  bossWarn: {
+    takes: 2,
+    gain: 0.62,
+    bus: 'world',
+    gap: 0.3,
+    build: (sr, rng) => {
+      // A rising, rattling rumble: it's winding up.
+      const out = buf(sr, 1.4);
+      addTone(out, sr, { f: 55, to: 110, glide: 0.5, attack: 0.7, hold: 0.25, decay: 0.12, amp: 0.8, tremolo: [16, 0.6] });
+      addTone(out, sr, { f: 110, to: 220, glide: 0.5, attack: 0.7, hold: 0.25, decay: 0.1, amp: 0.3, tremolo: [16, 0.6] });
+      addNoise(out, sr, rng, { length: 1.1, type: 'bp', f: 200, to: 1400, glide: 0.45, q: 2.2, attack: 0.85, amp: 0.45 });
+      return done(out, sr, 1.3);
+    },
+  },
+  bossLunge: {
+    takes: 2,
+    gain: 0.85,
+    bus: 'world',
+    gap: 0.2,
+    build: (sr, rng) => {
+      const out = synthWhoosh(sr, rng.int(1, 1e9));
+      addTone(out, sr, { f: 90, to: 45, glide: 0.2, attack: 0.01, decay: 0.3, amp: 0.8 });
+      addNoise(out, sr, rng, { length: 0.6, f: 300, to: 900, glide: 0.2, attack: 0.05, decay: 0.2, amp: 0.6 });
+      return done(out, sr, 1.3);
+    },
+  },
+  bossCrash: {
+    takes: 3,
+    gain: 1,
+    bus: 'world',
+    gap: 0.15,
+    build: (sr, rng) => {
+      // Rock giving way: a deep boom, crumbling stones, then a long settling rumble.
+      const out = buf(sr, 2.2);
+      addTone(out, sr, { f: 70, to: 28, glide: 0.12, attack: 0.002, decay: 0.55, amp: 1 });
+      addNoise(out, sr, rng, { length: 0.5, f: 700, to: 140, glide: 0.12, amp: 0.9, decay: 0.12 });
+      for (let i = 0; i < 22; i++) {
+        addModes(out, sr, 0.04 + Math.pow(rng.next(), 1.5) * 0.9, rng.range(250, 1100), [{ r: 1, a: 1, d: rng.range(0.02, 0.06) }, { r: 2.4, a: 0.4, d: 0.015 }], rng.range(0.1, 0.3), 0.0005);
+      }
+      addNoise(out, sr, rng, { at: 0.1, length: 1.8, f: 110, attack: 0.1, decay: 0.7, amp: 0.7 });
+      addBubbles(out, sr, rng, { at: 0.05, spread: 1, count: 30, f: [150, 700], amp: 0.25, bunch: 1.6 });
+      return done(out, sr, 1.6);
+    },
+  },
+  bossStun: {
+    takes: 1,
+    gain: 0.6,
+    bus: 'world',
+    tonal: true,
+    build: (sr, rng) => {
+      // Dazed: a woozy falling wobble and a twinkle of stars.
+      const out = buf(sr, 1.8);
+      addTone(out, sr, { f: 392, to: 196, glide: 0.5, attack: 0.02, hold: 0.4, decay: 0.3, amp: 0.55, vibrato: [7, 0.06] });
+      addTone(out, sr, { f: 294, to: 147, glide: 0.5, attack: 0.02, hold: 0.4, decay: 0.3, amp: 0.3, vibrato: [7.5, 0.06] });
+      run(out, sr, rng, 'glock', [96, 91, 96, 91], 0.15, 0.13, 0.35, 0.5);
+      return done(out, sr, 1);
+    },
+  },
+  bossHit: {
+    takes: 3,
+    gain: 0.95,
+    bus: 'world',
+    gap: 0.1,
+    build: (sr, rng) => {
+      // Armour cracking: a sharp splintering crack over a heavy crunch and thump.
+      const out = buf(sr, 1.3);
+      for (let i = 0; i < 5; i++) chirp(out, sr, i === 0 ? 0 : rng.range(0.005, 0.08), rng.range(4000, 7000), rng.range(400, 800), rng.range(0.5, 1), rng.range(0.03, 0.06));
+      for (let i = 0; i < 14; i++) addNoise(out, sr, rng, { at: rng.range(0, 0.1), length: 0.004, type: 'hp', f: 2500, amp: rng.range(0.5, 1) });
+      mixIn(out, synthCrunch(CRUNCH_BIG, sr, rng.int(1, 1e9)), sr, 0.01, 0.9);
+      addTone(out, sr, { f: 110, to: 36, glide: 0.07, attack: 0.002, decay: 0.3, amp: 1 });
+      addBubbles(out, sr, rng, { at: 0.05, spread: 0.6, count: 16, f: [200, 900], amp: 0.25, bunch: 1.5 });
+      return done(out, sr, 1.6);
+    },
+  },
+  bossPhase: {
+    takes: 1,
+    gain: 0.85,
+    bus: 'world',
+    tonal: true,
+    build: (sr, rng) => {
+      // Stinger: two heavy minor hits and a rising swell.
+      const out = buf(sr, 3);
+      for (const at of [0, 0.32]) {
+        note(out, sr, rng, 'pluckBass', 36, at, 1);
+        addTone(out, sr, { at, f: 65, to: 40, glide: 0.1, attack: 0.002, decay: 0.4, amp: 0.8 });
+        addNoise(out, sr, rng, { at, length: 0.3, f: 500, to: 150, glide: 0.08, amp: 0.5, decay: 0.08 });
+      }
+      run(out, sr, rng, 'harp', [48, 51, 55, 60, 63, 67], 0.64, 0.05, 0.5);
+      addNoise(out, sr, rng, { at: 0.6, length: 1.4, type: 'bp', f: 300, to: 2400, glide: 0.6, q: 1.2, attack: 1.1, decay: 0.2, amp: 0.4 });
+      return done(out, sr, 1.3);
+    },
+  },
+  bossDefeat: {
+    takes: 1,
+    gain: 1,
+    bus: 'world',
+    build: (sr, rng) => {
+      // The last roar breaks into a groan and a huge collapse.
+      const out = buf(sr, 3.6);
+      for (const [h, a] of [
+        [1, 0.9],
+        [2, 0.45],
+        [3, 0.25],
+      ]) {
+        addTone(out, sr, { f: 70 * h, to: 30 * h, glide: 1.2, attack: 0.05, hold: 0.6, decay: 0.8, amp: a, vibrato: [4, 0.05], tremolo: [18, 0.5] });
+      }
+      addTone(out, sr, { at: 0.5, f: 60, to: 24, glide: 0.2, attack: 0.002, decay: 1, amp: 1 });
+      addNoise(out, sr, rng, { at: 0.5, length: 2.4, f: 400, to: 80, glide: 0.8, amp: 0.8, decay: 0.8 });
+      addBubbles(out, sr, rng, { at: 0.4, spread: 2.2, count: 70, f: [100, 900], amp: 0.3, bunch: 1.4 });
+      return done(out, sr, 1.5);
+    },
+  },
+  bossInk: {
+    takes: 1,
+    gain: 0.75,
+    bus: 'world',
+    build: (sr, rng) => {
+      // A wet blast of ink: a falling sweep, a low "fwoomp" and a cloud of bubbles.
+      const out = buf(sr, 1.8);
+      addNoise(out, sr, rng, { length: 0.9, type: 'bp', f: 1800, to: 250, glide: 0.25, q: 0.8, attack: 0.01, decay: 0.3, amp: 1 });
+      addTone(out, sr, { f: 140, to: 50, glide: 0.15, attack: 0.005, decay: 0.3, amp: 0.8 });
+      addBubbles(out, sr, rng, { at: 0.03, spread: 1.2, count: 50, f: [150, 800], amp: 0.3, bunch: 1.6 });
+      return done(out, sr, 1.3);
+    },
+  },
+  baitBall: {
+    takes: 1,
+    gain: 0.7,
+    bus: 'world',
+    tonal: true,
+    build: (sr, rng) => {
+      // A shimmering swirl: fizzing bubbles under a bright rising run.
+      const out = buf(sr, 2.2);
+      addNoise(out, sr, rng, { length: 1.6, type: 'bp', f: 2600, to: 5200, glide: 1.2, q: 1.4, attack: 0.5, decay: 0.6, amp: 0.35 });
+      addBubbles(out, sr, rng, { at: 0, spread: 1.6, count: 60, f: [600, 2200], amp: 0.22, bunch: 1.2 });
+      run(out, sr, rng, 'glock', [79, 83, 86, 91, 95], 0.1, 0.09, 0.45, 0.06);
+      run(out, sr, rng, 'kalimba', [67, 71, 74], 0.14, 0.12, 0.5);
+      return done(out, sr, 1.1);
+    },
+  },
+  whaleWarn: {
+    takes: 1,
+    gain: 0.8,
+    bus: 'world',
+    build: (sr, rng) => {
+      // Something huge stirs below: a rising rumble through a dense curtain of bubbles.
+      const out = buf(sr, 2.4);
+      addTone(out, sr, { f: 38, to: 70, glide: 2, attack: 1.4, hold: 0.5, decay: 0.3, amp: 0.9, tremolo: [9, 0.4] });
+      addNoise(out, sr, rng, { length: 2.1, f: 160, to: 420, glide: 1.8, attack: 1.2, decay: 0.4, amp: 0.6 });
+      addBubbles(out, sr, rng, { at: 0.1, spread: 2, count: 90, f: [140, 900], amp: 0.28, bunch: 1.1 });
+      return done(out, sr, 1.3);
+    },
+  },
+  whaleLunge: {
+    takes: 1,
+    gain: 0.95,
+    bus: 'world',
+    tonal: true,
+    build: (sr, rng) => {
+      // A huge rush of water and a low whale moan that bends up and falls away.
+      const out = synthWhoosh(sr, rng.int(1, 1e9));
+      const moan = buf(sr, 2.8);
+      for (const [h, a] of [
+        [1, 0.8],
+        [2, 0.35],
+        [3, 0.15],
+      ]) {
+        addTone(moan, sr, { at: 0.15, f: 180 * h, to: 320 * h, glide: 0.7, attack: 0.25, hold: 0.5, decay: 0.9, amp: a, vibrato: [5, 0.02] });
+      }
+      addNoise(moan, sr, rng, { length: 1.2, f: 260, to: 120, glide: 0.8, attack: 0.02, decay: 0.5, amp: 0.8 });
+      addTone(moan, sr, { f: 60, to: 30, glide: 0.5, attack: 0.01, decay: 0.6, amp: 0.9 });
+      mixIn(moan, out, sr, 0, 0.9);
+      return done(moan, sr, 1.3);
+    },
+  },
+  riptide: {
+    takes: 1,
+    gain: 0.8,
+    bus: 'world',
+    build: (sr, rng) => {
+      // Storm water: a roaring sweep that swells, churns and settles into a rumble.
+      const out = buf(sr, 3.4);
+      addNoise(out, sr, rng, { length: 3, type: 'bp', f: 300, to: 1100, glide: 1.4, q: 0.7, attack: 0.9, decay: 1.2, amp: 0.9 });
+      addNoise(out, sr, rng, { length: 3, f: 120, attack: 0.6, decay: 1.4, amp: 0.8 });
+      addTone(out, sr, { f: 42, to: 34, glide: 2, attack: 0.8, hold: 0.8, decay: 1.2, amp: 0.7, tremolo: [6, 0.5] });
+      addBubbles(out, sr, rng, { at: 0.3, spread: 2.4, count: 50, f: [200, 1200], amp: 0.2, bunch: 1.3 });
+      return done(out, sr, 1.3);
+    },
+  },
+  dangerUp: {
+    takes: 1,
+    gain: 0.8,
+    bus: 'ui',
+    tonal: true,
+    build: (sr, rng) => {
+      // The stakes go up: two taiko hits, a climbing semitone alarm in the bass and a bell on top.
+      const out = buf(sr, 2.2);
+      note(out, sr, rng, 'taiko', 40, 0, 0.9);
+      note(out, sr, rng, 'taiko', 40, 0.22, 1);
+      run(out, sr, rng, 'pluckBass', [36, 37, 39, 40], 0, 0.11, 0.7);
+      note(out, sr, rng, 'bell', 76, 0.44, 0.45);
+      note(out, sr, rng, 'bell', 77, 0.44, 0.3);
+      addNoise(out, sr, rng, { length: 0.9, type: 'bp', f: 500, to: 1600, glide: 0.5, q: 0.8, attack: 0.3, decay: 0.4, amp: 0.25 });
+      return done(out, sr, 1.2);
+    },
+  },
 } satisfies Record<string, SoundDef>;
 
 export type SoundName = keyof typeof SOUND_DEFS;

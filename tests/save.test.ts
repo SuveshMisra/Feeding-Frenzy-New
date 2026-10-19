@@ -176,9 +176,10 @@ describe('Save migration', () => {
     expect(ids.map((_, i) => levelOpen(store.data, ids, i))).toEqual([true, false, false, false]);
     store.recordLevel('reef', 0, 3000, 1);
     expect(ids.map((_, i) => levelOpen(store.data, ids, i))).toEqual([true, true, false, false]);
-    // A level cleared out of order (in test mode) opens the one after it, not the gap before it.
+    // A level with its own record stays open, and opens the one after it (levels inserted later
+    // must not lock anything an old save already reached).
     store.recordLevel('wreck', 2, 3000, 1);
-    expect(ids.map((_, i) => levelOpen(store.data, ids, i))).toEqual([true, true, false, true]);
+    expect(ids.map((_, i) => levelOpen(store.data, ids, i))).toEqual([true, true, true, true]);
     expect(levelOpen(store.data, ids, 4)).toBe(false);
     expect(levelOpen(store.data, ids, -1)).toBe(false);
   });

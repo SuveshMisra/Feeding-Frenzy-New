@@ -612,9 +612,9 @@ function paintPattern(
         k.ellipse(X(x), Y(y), r * rng.range(1, 1.8), r, rng.range(0, Math.PI), 0, Math.PI * 2);
         k.fill();
       }
-      if (def.id === 'anglerfish' && g) {
+      if ((def.id === 'anglerfish' || def.id === 'anglerKing') && g) {
         // Faint glowing freckles.
-        for (let i = 0; i < 16; i++) {
+        for (let i = 0; i < (def.id === 'anglerKing' ? 34 : 16); i++) {
           const [x, y] = randPoint(0.1, 0.9, -0.8, 0.6);
           g.fillStyle = 'rgba(255,255,255,0.35)';
           g.beginPath();

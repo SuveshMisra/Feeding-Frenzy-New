@@ -33,6 +33,8 @@ export interface SaveData {
   hero: HeroId;
   /** Completed challenges per level id, in the level's challenge order. */
   challenges: Record<string, boolean[]>;
+  /** Best endless-mode score per biome id. */
+  endless: Record<string, number>;
 }
 
 export interface StorageLike {
@@ -57,6 +59,7 @@ export function defaultSave(): SaveData {
     heroes: ['finn'],
     hero: 'finn',
     challenges: {},
+    endless: {},
   };
 }
 
@@ -139,13 +142,24 @@ export function migrate(raw: unknown, levelCount: number): SaveData {
       if (done.some(Boolean)) out.challenges[id] = done;
     }
   }
+  const endless = obj(src.endless);
+  if (endless) {
+    for (const [biome, score] of Object.entries(endless)) {
+      const s = Math.floor(num(score, 0, 0, 1e9));
+      if (s > 0) out.endless[biome] = s;
+    }
+  }
   return out;
 }
 
-/** A level opens once the one before it is cleared. `levelIds` maps level index to id. */
+/**
+ * A level opens once the one before it is cleared, and stays open once it has a record of its
+ * own (so levels inserted later, like the bosses, never lock what a player already reached).
+ * `levelIds` maps level index to id.
+ */
 export function levelOpen(data: SaveData, levelIds: readonly string[], index: number): boolean {
   if (index < 0 || index >= levelIds.length) return false;
-  return index === 0 || data.settings.testMode || Boolean(data.best[levelIds[index - 1]]);
+  return index === 0 || data.settings.testMode || Boolean(data.best[levelIds[index - 1]] || data.best[levelIds[index]]);
 }
 
 export class SaveStore {
@@ -202,6 +216,15 @@ export class SaveStore {
       this.persist();
     }
     return fresh;
+  }
+
+  /** Records an endless run. Returns true for a new best in that biome. */
+  recordEndless(biome: string, score: number): boolean {
+    const prev = this.data.endless[biome] ?? 0;
+    if (score <= prev) return false;
+    this.data.endless[biome] = Math.floor(score);
+    this.persist();
+    return true;
   }
 
   challengesFor(id: string): boolean[] {

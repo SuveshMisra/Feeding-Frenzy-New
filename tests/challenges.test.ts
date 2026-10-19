@@ -72,9 +72,9 @@ describe('Challenges', () => {
     expect(challengeLabel({ kind: 'combo', n: 12 })).toBe('Reach a 12 combo');
   });
 
-  it('gives every level a feature, a tip and three challenges', () => {
+  it('gives every level a feature (or a boss), a tip and three challenges', () => {
     for (const lv of LEVELS) {
-      expect(lv.feature, lv.id).toBeTruthy();
+      expect(Boolean(lv.feature) !== Boolean(lv.boss), lv.id).toBe(true);
       expect(lv.tip.length, lv.id).toBeGreaterThan(10);
       expect(lv.challenges, lv.id).toHaveLength(3);
       for (const c of lv.challenges) expect(challengeLabel(c).length).toBeGreaterThan(5);

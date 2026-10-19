@@ -375,6 +375,206 @@ button {
   animation: growth-pulse 0.8s ease;
 }
 
+.hud-growth.gone {
+  display: none;
+}
+
+/* endless danger level: amber at 1, blood red by 7 */
+
+.hud-danger {
+  --heat: 0;
+  --tone: color-mix(in srgb, #ff3a4a calc(var(--heat) * 100%), #ffc04d);
+  display: none;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 14px 5px 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(60, 14, 10, 0.68), rgba(4, 30, 50, 0.62));
+  border: 1px solid color-mix(in srgb, var(--tone) 55%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 calc(6px + var(--heat) * 14px) color-mix(in srgb, var(--tone) 40%, transparent);
+  font-weight: 700;
+  color: var(--tone);
+}
+
+.hud-danger.show {
+  display: flex;
+}
+
+.hud-danger-label {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hud-danger-num {
+  min-width: 18px;
+  font-size: 20px;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 0 10px color-mix(in srgb, var(--tone) 70%, transparent);
+}
+
+.hud-danger-bar {
+  width: 96px;
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(0, 16, 30, 0.6);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.hud-danger-fill {
+  width: 100%;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tone) 40%, #000), var(--tone));
+}
+
+.hud-danger-mul {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.hud-danger.up {
+  animation: danger-up 0.9s ease-out;
+}
+
+@keyframes danger-up {
+  20% {
+    scale: 1.18;
+    filter: brightness(1.7);
+  }
+}
+
+/* boss health bar: one segment per phase, draining right to left */
+
+.hud-boss {
+  display: none;
+  justify-self: center;
+  min-width: 380px;
+  padding: 9px 16px 12px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(92, 14, 30, 0.66), rgba(40, 4, 14, 0.74));
+  border: 1px solid rgba(255, 130, 120, 0.45);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(20, 0, 6, 0.4);
+  transition: box-shadow 0.25s ease;
+}
+
+.hud-boss.show {
+  display: block;
+}
+
+.hud-boss-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.hud-boss-name {
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.hud-boss-hint {
+  color: var(--gold);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.hud-boss.open .hud-boss-hint {
+  opacity: 1;
+  animation: boss-hint 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes boss-hint {
+  to {
+    opacity: 0.55;
+  }
+}
+
+.hud-boss-segs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 6px;
+}
+
+.hud-boss-segs .bseg {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(24, 0, 8, 0.6);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.bseg-lag,
+.bseg-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+}
+
+.bseg-lag {
+  background: rgba(255, 236, 200, 0.85);
+  transition: transform 0.6s ease-in 0.3s;
+}
+
+.bseg-fill {
+  background: linear-gradient(180deg, #ffc0b0, #ff4a4a 60%, #c0182c);
+  transition: transform 0.15s ease-out;
+  box-shadow: 0 0 12px rgba(255, 60, 60, 0.5);
+}
+
+.hud-boss-segs .bseg.empty {
+  opacity: 0.45;
+}
+
+.hud-boss.open {
+  box-shadow:
+    0 0 0 2px rgba(255, 210, 122, 0.85),
+    0 0 26px rgba(255, 200, 90, 0.55);
+}
+
+.hud-boss.open .bseg.active .bseg-fill {
+  background: linear-gradient(180deg, #fff3c0, #ffc24d 60%, #ff8a1a);
+  animation: boss-open 0.5s ease-in-out infinite alternate;
+}
+
+@keyframes boss-open {
+  to {
+    filter: brightness(1.35);
+  }
+}
+
+.hud-boss.hit {
+  animation: boss-hit 0.45s ease;
+}
+
+@keyframes boss-hit {
+  25% {
+    scale: 1.07;
+    translate: 3px 0;
+    filter: brightness(1.8);
+  }
+  50% {
+    translate: -3px 0;
+  }
+}
+
+.hud-boss.beaten {
+  opacity: 0.6;
+}
+
 @keyframes growth-pulse {
   0% {
     scale: 1;
@@ -1194,6 +1394,11 @@ body.touch .boost-ring {
   background-image: linear-gradient(180deg, #f2fbff 10%, #9be6ff 55%, #3aa0e0);
 }
 
+.hud-banner.boss .banner-title {
+  background-image: linear-gradient(180deg, #fffbe6 10%, #ffc24d 50%, #ff5a3a);
+  filter: drop-shadow(0 3px 0 rgba(80, 10, 0, 0.7)) drop-shadow(0 0 20px rgba(255, 110, 60, 0.55));
+}
+
 .hud-banner.challenge {
   top: 22%;
 }
@@ -1679,6 +1884,97 @@ div.test-badge {
   border-color: rgba(95, 242, 255, 0.85);
 }
 
+/* A chapter's boss takes a whole row as a wide banner tile. */
+.level-card.boss {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    'fish name foot'
+    'fish sub foot';
+  align-items: center;
+  column-gap: 18px;
+  row-gap: 2px;
+  min-height: 118px;
+  padding: 12px 22px 12px 52px;
+  text-align: left;
+  border-color: rgba(255, 130, 120, 0.6);
+}
+
+.level-card.boss .level-fish {
+  grid-area: fish;
+  width: 200px;
+  height: 92px;
+  margin: 0;
+}
+
+.level-card.boss .level-name {
+  grid-area: name;
+  justify-content: flex-start;
+  align-self: end;
+  min-height: 0;
+  font-size: 24px;
+}
+
+.level-card.boss .level-sub {
+  grid-area: sub;
+  align-self: start;
+  min-height: 0;
+  font-size: 13.5px;
+}
+
+.level-card.boss .level-foot {
+  grid-area: foot;
+  margin: 0;
+}
+
+.level-card.boss .level-challenges {
+  top: 50px;
+  left: 14px;
+  flex-direction: column;
+}
+
+.level-card.boss .level-unlock {
+  left: auto;
+  right: 180px;
+  top: 8px;
+}
+
+.level-card.boss:hover,
+.level-card.boss:focus-visible {
+  transform: translateY(-4px) scale(1.01);
+  border-color: rgba(255, 190, 170, 0.95);
+  box-shadow:
+    0 18px 40px rgba(0, 10, 20, 0.5),
+    0 0 0 4px rgba(255, 90, 80, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -40px 60px rgba(0, 10, 20, 0.35);
+}
+
+.level-card.boss.perfect {
+  border-color: rgba(255, 211, 90, 0.85);
+}
+
+.level-boss-tag {
+  position: absolute;
+  right: 12px;
+  top: 10px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(180deg, #ff8a7a, #d0203a);
+  box-shadow: 0 2px 8px rgba(80, 0, 10, 0.55);
+}
+
+.level-card.boss .level-ribbon {
+  right: 76px;
+}
+
 .level-ribbon {
   position: absolute;
   right: 10px;
@@ -1875,6 +2171,51 @@ div.test-badge {
 .coin-badge.big .coin-icon svg {
   width: 26px;
   height: 26px;
+}
+
+.btn.endless-btn {
+  border-color: rgba(255, 170, 120, 0.55);
+  background: linear-gradient(180deg, rgba(170, 60, 50, 0.6), rgba(70, 16, 36, 0.75));
+}
+
+.btn.endless-btn.locked {
+  cursor: default;
+  opacity: 0.6;
+  filter: grayscale(0.7);
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-lock svg {
+  width: 16px;
+  height: 16px;
+  margin: -3px 8px 0 -4px;
+  vertical-align: middle;
+}
+
+.endless-intro {
+  margin: -6px 0 2px;
+  max-width: 560px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 15.5px;
+}
+
+.endless-card {
+  min-height: 190px;
+}
+
+.endless-card.new .level-best {
+  color: var(--text-dim);
+}
+
+.intro.endless .intro-level {
+  color: #ffb08a;
+}
+
+.intro.endless .intro-goal {
+  background: rgba(60, 20, 12, 0.55);
+  border-color: rgba(255, 170, 120, 0.45);
 }
 
 .btn.shop-btn::before {
@@ -2608,6 +2949,22 @@ input[type='range']::-moz-range-thumb {
   box-shadow: 0 0 22px rgba(95, 242, 255, 0.25);
 }
 
+.intro.boss .intro-level {
+  color: #ff9a8a;
+}
+
+.intro.boss .intro-name {
+  background: linear-gradient(180deg, #ffffff 10%, #ffc2b0 55%, #ff5a4a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 4px 0 rgba(70, 0, 10, 0.65)) drop-shadow(0 8px 26px rgba(120, 0, 20, 0.55));
+}
+
+.intro.boss .intro-goal {
+  background: rgba(60, 6, 16, 0.6);
+  border-color: rgba(255, 130, 120, 0.5);
+}
+
 /* results & game over */
 
 .big-stars {
@@ -2895,7 +3252,7 @@ body.context-lost::after {
 
 @media (max-width: 640px), (max-height: 520px) {
   .level-grid {
-    grid-template-columns: repeat(10, 150px);
+    grid-template-columns: repeat(11, 150px);
     overflow-x: auto;
     padding: 8px 4px 12px;
     max-width: calc(100vw - 30px);
@@ -2904,6 +3261,42 @@ body.context-lost::after {
   .level-card {
     min-height: 206px;
     scroll-snap-align: center;
+  }
+  /* In the scrolling strip the boss is just the last card. */
+  .level-card.boss {
+    grid-column: auto;
+    display: flex;
+    padding: 12px 12px 10px;
+    text-align: center;
+  }
+  .level-card.boss .level-fish {
+    width: 120px;
+    height: 62px;
+    margin-top: 12px;
+  }
+  .level-card.boss .level-name {
+    justify-content: center;
+    font-size: 16px;
+  }
+  .level-card.boss .level-foot {
+    margin-top: auto;
+  }
+  .level-card.boss .level-challenges {
+    top: 21px;
+    left: 46px;
+    flex-direction: row;
+  }
+  .level-card.boss .level-ribbon {
+    right: 10px;
+    top: 36px;
+  }
+  .level-card.boss .level-unlock {
+    left: 8px;
+    right: 8px;
+    top: 46px;
+  }
+  .hud-boss {
+    min-width: 240px;
   }
   .level-fish {
     width: 120px;
@@ -3016,7 +3409,8 @@ body.portrait .hud-center {
   align-items: stretch;
 }
 
-body.portrait .hud-growth {
+body.portrait .hud-growth,
+body.portrait .hud-boss {
   justify-self: stretch;
   min-width: 0;
   padding: 7px 12px 10px;

@@ -69,6 +69,8 @@ export class GreatWhite {
   private seen = false;
   private chompGap = 0;
   private passes = 0;
+  /** While false no new pass is scheduled (endless holds it back until the danger level climbs). */
+  enabled = true;
   private readonly rng: Rng;
   private readonly view: ViewRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
 
@@ -89,6 +91,17 @@ export class GreatWhite {
   /** Debug: start the next pass now. */
   summon(): void {
     if (this.state === 'idle') this.timer = 0;
+  }
+
+  /** Warning or mid-pass. */
+  get busy(): boolean {
+    return this.state !== 'idle';
+  }
+
+  /** Seconds until the next warning starts (0 while busy). */
+  get eta(): number {
+    if (this.state !== 'idle') return 0;
+    return this.enabled ? Math.max(0, this.timer) : Infinity;
   }
 
   get warning(): GreatWhiteWarning | null {
@@ -119,8 +132,13 @@ export class GreatWhite {
     const p = this.world.player;
     switch (this.state) {
       case 'idle':
+        if (!this.enabled) break;
         if (this.playing && p.alive) this.timer -= dt;
-        if (this.timer <= 0) this.startWarning();
+        // Never on top of a mid-level event.
+        if (this.timer <= 0) {
+          if (this.world.director?.busy) this.timer = 3;
+          else this.startWarning();
+        }
         break;
       case 'warn':
         this.t += dt;

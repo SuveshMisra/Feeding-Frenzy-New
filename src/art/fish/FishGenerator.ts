@@ -134,7 +134,7 @@ export function buildLayout(def: SpeciesDef, texScale = 1): FishLayout {
   const hingeTn = tnAt(hingeX);
   const tipY = center(0.01) - lower(0.02) * 0.4;
   const hingeY = center(hingeTn) - lower(hingeTn) * 0.28;
-  const jaw = { hingeX, hingeY, tipX: NOSE_X, tipY, maxAngle: def.id === 'gulp' ? 0.78 : def.id === 'greatWhite' ? 0.7 : isHero(def) ? 0.62 : 0.55 };
+  const jaw = { hingeX, hingeY, tipX: NOSE_X, tipY, maxAngle: def.id === 'gulp' || def.id === 'anglerKing' ? 0.78 : def.id === 'greatWhite' ? 0.7 : isHero(def) ? 0.62 : 0.55 };
 
   const layout: FishLayout = {
     def,
@@ -209,7 +209,7 @@ export function buildLayout(def: SpeciesDef, texScale = 1): FishLayout {
       // On the lip surface: deeper inside the body they are never seen.
       const rel = (my - center(tn)) / (my > center(tn) ? upper(tn) : lower(tn));
       const z = halfWidth(tn) * Math.sqrt(Math.max(0.05, 1 - rel * rel)) * 0.95;
-      const len = H * (0.08 + 0.13 * Math.sin(u * Math.PI)) * (def.id === 'anglerfish' ? 1.3 : def.id === 'viperfish' ? 1.8 : def.id === 'greatWhite' ? 0.9 : 1);
+      const len = H * (0.08 + 0.13 * Math.sin(u * Math.PI)) * (def.id === 'anglerfish' ? 1.3 : def.id === 'anglerKing' ? 1.55 : def.id === 'viperfish' ? 1.8 : def.id === 'greatWhite' ? 0.9 : 1);
       layout.fangs.push({ x, y: my + len * 0.25, z, len, up: false });
       layout.fangs.push({ x: x - 0.01, y: my - len * 0.25, z, len: len * 0.8, up: true });
     }

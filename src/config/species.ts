@@ -130,7 +130,9 @@ export type SpeciesId =
   | 'coelacanth'
   | 'hammerhead'
   | 'tigerShark'
-  | 'greatWhite';
+  | 'greatWhite'
+  | 'anglerKing'
+  | 'humpback';
 
 const defs: SpeciesDef[] = [
   {
@@ -981,6 +983,48 @@ const defs: SpeciesDef[] = [
     depth: [0.1, 0.9],
     mouth: 0.21,
     special: ['sharkGills', 'fangs'],
+  },
+  {
+    // Ocean I's boss. Its lure is a separate glowing bulb on a filament (see AnglerKing), so it can drift and go limp.
+    id: 'anglerKing',
+    name: 'The Abyss King',
+    tier: 4,
+    length: 11,
+    body: { height: 0.62, width: 0.92, hump: 0.36, peduncle: 0.18, bluntness: 1.35, snout: 0.08, belly: 1.12 },
+    tail: { shape: 'round', size: 0.16, spread: 0.8 },
+    dorsal: { start: 0.5, end: 0.72, height: 0.26, spiky: true },
+    anal: { start: 0.62, end: 0.8, height: 0.22 },
+    pectoral: { size: 0.18, t: 0.36 },
+    eye: { size: 0.065, t: 0.19, y: 0.26, iris: '#ff6a3a' },
+    colors: { back: '#14161d', mid: '#232733', belly: '#353a4a', fin: '#1b1e26', finEdge: '#5a2a30', accent: '#08090d', accent2: '#5a3040' },
+    pattern: 'mottled',
+    material: { roughness: 0.5, clearcoat: 0.6, glow: '#ff7a4a', glowIntensity: 3 },
+    swim: { freq: 1.2, amp: 0.035, wave: 3 },
+    speed: { cruise: 3, burst: 30 },
+    behavior: 'predator',
+    depth: [0.1, 0.9],
+    mouth: 0.3,
+    special: ['fangs'],
+  },
+  {
+    // Not in any roster: the whale-lunge event drives it straight up through a column of prey.
+    id: 'humpback',
+    name: 'Humpback Whale',
+    tier: 4,
+    length: 18,
+    body: { height: 0.2, width: 0.95, hump: 0.3, peduncle: 0.16, bluntness: 1.05, snout: -0.04, belly: 1.15 },
+    tail: { shape: 'lunate', size: 0.2, spread: 2.4 },
+    dorsal: { start: 0.62, end: 0.67, height: 0.22, sweep: 0.4 },
+    pectoral: { size: 0.85, t: 0.32 },
+    eye: { size: 0.03, t: 0.2, y: 0.08, iris: '#14100c' },
+    colors: { back: '#262e38', mid: '#3a4552', belly: '#c9ced6', fin: '#2c3540', finEdge: '#dfe3e8', accent: '#1a2028', accent2: '#e8ebef' },
+    pattern: 'mottled',
+    material: { roughness: 0.6, clearcoat: 0.3 },
+    swim: { freq: 0.6, amp: 0.05, wave: 2.4 },
+    speed: { cruise: 3, burst: 24 },
+    behavior: 'predator',
+    depth: [0, 1],
+    mouth: 0.24,
   },
 ];
 

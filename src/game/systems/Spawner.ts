@@ -39,6 +39,8 @@ export class Spawner {
   private lastStage: Stage = 1;
   private goldenTimer: number;
   private readonly rng: Rng;
+  /** Threats kept around on top of the level's count (endless danger). */
+  extraThreats = 0;
   onSpawn: ((f: Fish) => void) | null = null;
   onRemove: ((f: Fish) => void) | null = null;
 
@@ -59,7 +61,7 @@ export class Spawner {
   }
 
   threatTarget(stage: Stage): number {
-    return this.level.difficulty.predators[stage - 1];
+    return this.level.difficulty.predators[stage - 1] + this.extraThreats;
   }
 
   counts(stage: Stage): { edible: number; threats: number } {
@@ -196,6 +198,35 @@ export class Spawner {
     const f = this.spawnSingle(id, { x: clamp(x, -W / 2 + 2, W / 2 - 2), y: clamp(y, bMin, bMax), dir }, false);
     f.appear = appear;
     return f;
+  }
+
+  /**
+   * A whole school of `id` around (x, y) that keeps to a band `band` tall around that depth
+   * (a boss's swarm, a bait ball). Returns the school.
+   */
+  spawnSchool(id: SpeciesId, x: number, y: number, n: number, dir: 1 | -1, spread = 1.6, band = 6, appear = 0): School {
+    const def = SPECIES[id];
+    const W = this.level.world.width;
+    const cx = clamp(x, -W / 2 + 3, W / 2 - 3);
+    const floor = this.world.floorAt(cx) + 1;
+    const top = this.world.surfaceY - 1.2;
+    const cy = clamp(y, floor, top);
+    const bMin = clamp(cy - band / 2, floor, top);
+    const bMax = clamp(cy + band / 2, bMin + 0.5, top);
+    const school: School = { id: schoolId++, members: [], goalX: cx, goalY: cy, heading: dir > 0 ? 0 : Math.PI, panic: 0 };
+    for (let i = 0; i < n; i++) {
+      const f = new Fish(def, this.rng.range(0.9, 1.12));
+      f.place(cx + this.rng.gauss(spread), clamp(cy + this.rng.gauss(spread * 0.7), bMin, bMax), dir * def.speed.cruise, 0);
+      f.bandMin = bMin;
+      f.bandMax = bMax;
+      f.z = this.rng.range(-0.6, 0.4);
+      f.school = school;
+      f.appear = appear;
+      school.members.push(f);
+      this.add(f);
+    }
+    this.schools.push(school);
+    return school;
   }
 
   private spawnSingle(id: SpeciesId, spot: { x: number; y: number; dir: 1 | -1 }, initial: boolean, setup?: (f: Fish) => void): Fish {

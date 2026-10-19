@@ -226,11 +226,11 @@ export class MusicDirector {
     return m.root + 12 + degs[i % degs.length] + 12 * Math.floor(i / degs.length);
   }
 
-  stinger(kind: 'win' | 'lose' | 'grow'): void {
+  stinger(kind: 'win' | 'lose' | 'grow' | 'phase'): void {
     const ctx = this.ctx;
     const m = this.track?.mood;
     if (!ctx || !m) return;
-    const t0 = this.nextBeat(kind === 'grow' ? 2 : 4);
+    const t0 = this.nextBeat(kind === 'grow' || kind === 'phase' ? 2 : 4);
     const n = m.scale.length;
     const st = this.style;
     const note = (d: number): number => noteAt(m, d);
@@ -241,6 +241,10 @@ export class MusicDirector {
     } else if (kind === 'lose') {
       [4, 3, 1, 0].forEach((d, i) => this.hit(st.lead, note(d), t0 + i * 0.26, 0.7, this.stingBus));
       this.hit(st.bass, note(0) - 24, t0 + 1.04, 0.9, this.stingBus, 2.5);
+    } else if (kind === 'phase') {
+      // Two low accents, then the lead climbs: the fight steps up.
+      for (const at of [0, 0.22]) this.hit(st.bass, note(0) - 24, t0 + at, 0.9, this.stingBus, 1.2);
+      [0, 1, 2, 4].forEach((d, i) => this.hit(st.lead, note(d), t0 + 0.5 + i * 0.11, 0.6, this.stingBus));
     } else {
       [0, 2, 4, n].forEach((d, i) => this.hit(st.chime, note(d) + 12, t0 + i * 0.07, 0.5, this.stingBus));
     }
