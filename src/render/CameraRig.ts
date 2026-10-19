@@ -31,6 +31,8 @@ export class CameraRig {
   shakeEnabled = true;
   /** Extra zoom multiplier for cinematic moments (1 = none). */
   zoomPunch = 1;
+  /** Scales every stage's view height; below 1 on phones. */
+  viewScale = 1;
   private trauma = 0;
   private time = 0;
   private readonly noise = ((r) => createNoise2D(() => r.next()))(new Rng(9));
@@ -65,7 +67,7 @@ export class CameraRig {
 
   /** View height for a growth stage, widened on narrow (portrait) screens. */
   stageViewHeight(stageIndex: number): number {
-    const base = CAMERA.viewHeightByStage[clamp(stageIndex, 0, CAMERA.viewHeightByStage.length - 1)];
+    const base = CAMERA.viewHeightByStage[clamp(stageIndex, 0, CAMERA.viewHeightByStage.length - 1)] * this.viewScale;
     const a = this.camera.aspect;
     if (a >= 1.2) return base;
     const minW = base * 1.2;

@@ -74,6 +74,8 @@ export const SUCTION = {
 export const CAMERA = {
   fov: 40,
   viewHeightByStage: [14, 19.5, 26, 30] as const,
+  /** Phones show this share of the view so the fish aren't tiny on a small screen. */
+  phoneViewScale: 0.75,
   followLambda: 3.4,
   lookAhead: 0.32,
   marginBottom: 1.2,

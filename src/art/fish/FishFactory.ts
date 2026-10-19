@@ -1,7 +1,8 @@
 import {
+  BackSide,
   Color,
-  DoubleSide,
   DynamicDrawUsage,
+  FrontSide,
   InstancedBufferAttribute,
   InstancedMesh,
   MeshPhysicalMaterial,
@@ -10,6 +11,7 @@ import {
   type BufferGeometry,
   type Matrix4,
   type Object3D,
+  type Side,
   type Texture,
 } from 'three';
 import { SPECIES, type SpeciesDef, type SpeciesId } from '../../config/species';
@@ -25,7 +27,9 @@ export interface FishAsset {
   bodyGeo: BufferGeometry;
   finGeo: BufferGeometry;
   bodyMat: MeshStandardMaterial;
+  /** Front faces of the see-through fins; `finBackMat` draws their back faces first. */
   finMat: MeshStandardMaterial;
+  finBackMat: MeshStandardMaterial;
   uniforms: FishUniforms;
   map: Texture;
   emissive: Texture | null;
@@ -119,21 +123,23 @@ export class FishFactory {
     );
     patchMaterial(bodyMat, { caustics: true, fish: uniforms });
 
-    const finMat = new MeshStandardMaterial({
-      map: painted.map,
-      roughness: 0.5,
-      metalness: 0,
-      transparent: true,
-      side: DoubleSide,
-      depthWrite: false,
-      alphaTest: 0.04,
-    });
-    if (painted.emissive) {
-      finMat.emissiveMap = painted.emissive;
-      finMat.emissive = new Color(m.glow ?? '#ffffff');
-      finMat.emissiveIntensity = m.glowIntensity ?? 1;
-    }
-    patchMaterial(finMat, { caustics: true, fish: uniforms, fins: true, translucency: 0.35 });
+    const finMaterial = (side: Side): MeshStandardMaterial => {
+      const mat = new MeshStandardMaterial({
+        map: painted.map,
+        roughness: 0.5,
+        metalness: 0,
+        transparent: true,
+        side,
+        depthWrite: false,
+        alphaTest: 0.04,
+      });
+      if (painted.emissive) {
+        mat.emissiveMap = painted.emissive;
+        mat.emissive = new Color(m.glow ?? '#ffffff');
+        mat.emissiveIntensity = m.glowIntensity ?? 1;
+      }
+      return patchMaterial(mat, { caustics: true, fish: uniforms, fins: true, translucency: 0.35 });
+    };
 
     return {
       id,
@@ -142,7 +148,8 @@ export class FishFactory {
       bodyGeo,
       finGeo,
       bodyMat,
-      finMat,
+      finMat: finMaterial(FrontSide),
+      finBackMat: finMaterial(BackSide),
       uniforms,
       map: painted.map,
       emissive: painted.emissive,
@@ -156,6 +163,7 @@ export class FishFactory {
       a.finGeo.dispose();
       a.bodyMat.dispose();
       a.finMat.dispose();
+      a.finBackMat.dispose();
       a.map.dispose();
       a.emissive?.dispose();
     }
@@ -166,6 +174,12 @@ export class FishFactory {
 /** Instanced batch of one species: body and fins share the instance matrices. */
 export class FishPool implements FishRenderer {
   readonly body: InstancedMesh;
+  /**
+   * The fins are drawn as a back-face then a front-face mesh. That is how three draws a
+   * double-sided transparent material anyway, but it flips the material's side and recompiles
+   * its parameters twice a frame to do it.
+   */
+  readonly finsBack: InstancedMesh;
   readonly fins: InstancedMesh;
   readonly capacity: number;
   private readonly swim: InstancedBufferAttribute;
@@ -185,17 +199,26 @@ export class FishPool implements FishRenderer {
       g.setAttribute('aFx', this.fx);
     }
     this.body = new InstancedMesh(bodyGeo, asset.bodyMat, capacity);
+    // Created before the front faces so it sorts (by id) just ahead of them.
+    this.finsBack = new InstancedMesh(finGeo, asset.finBackMat, capacity);
     this.fins = new InstancedMesh(finGeo, asset.finMat, capacity);
     this.body.instanceMatrix.setUsage(DynamicDrawUsage);
-    this.fins.instanceMatrix = this.body.instanceMatrix;
-    for (const m of [this.body, this.fins]) {
+    this.fins.instanceMatrix = this.finsBack.instanceMatrix = this.body.instanceMatrix;
+    for (const m of [this.body, this.finsBack, this.fins]) {
       m.frustumCulled = false;
       m.count = 0;
       m.castShadow = castShadow;
       m.receiveShadow = false;
     }
-    this.fins.castShadow = false;
-    this.fins.renderOrder = 1;
+    for (const m of [this.finsBack, this.fins]) {
+      m.castShadow = false;
+      m.renderOrder = 1;
+    }
+    // Transparent objects sort by their bounds' centre: both halves must share one so nothing lands between them.
+    this.finsBack.computeBoundingSphere = () => {
+      if (!this.fins.boundingSphere) this.fins.computeBoundingSphere();
+      this.finsBack.boundingSphere = this.fins.boundingSphere;
+    };
   }
 
   begin(): void {
@@ -219,6 +242,7 @@ export class FishPool implements FishRenderer {
 
   end(): void {
     this.body.count = this.count;
+    this.finsBack.count = this.count;
     this.fins.count = this.count;
     if (this.count > 0) {
       this.body.instanceMatrix.clearUpdateRanges();
@@ -234,11 +258,12 @@ export class FishPool implements FishRenderer {
   }
 
   addTo(parent: Object3D): void {
-    parent.add(this.body, this.fins);
+    parent.add(this.body, this.finsBack, this.fins);
   }
 
   removeFromParent(): void {
     this.body.removeFromParent();
+    this.finsBack.removeFromParent();
     this.fins.removeFromParent();
   }
 
@@ -247,6 +272,7 @@ export class FishPool implements FishRenderer {
     this.body.geometry.dispose();
     this.fins.geometry.dispose();
     this.body.dispose();
+    this.finsBack.dispose();
     this.fins.dispose();
   }
 }

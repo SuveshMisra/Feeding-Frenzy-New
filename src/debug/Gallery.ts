@@ -81,8 +81,7 @@ export function startGallery(renderer: Renderer): void {
       caustics.update(renderer.gl, t);
       const shown = only ? pools.filter((p) => p.asset.id === only) : pools;
       pools.forEach((p) => {
-        p.body.visible = shown.includes(p);
-        p.fins.visible = shown.includes(p);
+        p.body.visible = p.finsBack.visible = p.fins.visible = shown.includes(p);
       });
       shown.forEach((p, i) => draw(p, i, shown.length));
       renderer.gl.render(scene, camera);

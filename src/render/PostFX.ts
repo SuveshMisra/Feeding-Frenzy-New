@@ -181,6 +181,19 @@ export class PostFX {
   }
 
   /**
+   * Compiles the scene's shaders, hidden objects included (boss glows, telegraphs), so none of
+   * them stalls a frame the first time it appears. Shaders depend on the target they draw into,
+   * so this compiles against the composer's buffer rather than the screen.
+   */
+  precompile(): void {
+    const gl = this.composer.getRenderer();
+    const prev = gl.getRenderTarget();
+    gl.setRenderTarget(this.composer.inputBuffer);
+    gl.compile(this.scene, this.camera);
+    gl.setRenderTarget(prev);
+  }
+
+  /**
    * The normals are drawn with one plain material, so anything see-through (particles, fins,
    * light shafts) or cut out by alpha (sea fans) would show up as solid shapes.
    */

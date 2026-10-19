@@ -1,7 +1,7 @@
 import { Scene, Vector2 } from 'three';
 import { CHAPTERS, LEVELS, LEVEL_IDS, endlessLevel, resolveBiome, type LevelDef } from '../config/levels';
 import { SPECIES, type SpeciesId } from '../config/species';
-import { STAGE_COUNT, type Tier } from '../config/tuning';
+import { CAMERA, STAGE_COUNT, type Tier } from '../config/tuning';
 import { Loop } from '../engine/Loop';
 import { Renderer } from '../engine/Renderer';
 import { shared } from '../engine/materialPatches';
@@ -23,7 +23,7 @@ import { SaveStore, levelOpen, type Settings } from './Save';
 import { coinsFor, endlessCoinsFor, endlessHeroes, heroesFor, type HeroId, type UpgradeKind } from '../config/progression';
 import { CHALLENGE_COINS } from '../game/systems/Challenges';
 import type { SoundName } from '../audio/Sfx';
-import { AdaptiveQuality, PRESETS, lowerLevel, resolveQuality, type QualityLevel, type QualityPreset } from './Quality';
+import { AdaptiveQuality, PRESETS, isTouchDevice, lowerLevel, resolveQuality, type QualityLevel, type QualityPreset } from './Quality';
 
 /** 'won' covers the celebration before the results: no pausing, so the clear can't be thrown away. */
 type AppState = 'title' | 'intro' | 'playing' | 'won' | 'paused' | 'ended';
@@ -372,6 +372,7 @@ export class App {
     this.post.applyBiome(biome);
     this.renderer.gl.setClearColor(world.env.clearColor, 1);
     world.resize(this.renderer.width, this.renderer.height, this.renderer.dpr);
+    this.post.precompile();
     this.wire(world);
     this.world = world;
     return world;
@@ -878,6 +879,7 @@ export class App {
 
   private onResize(w: number, hh: number, dpr: number): void {
     this.rig.setAspect(w / hh);
+    this.rig.viewScale = isTouchDevice() && Math.min(w, hh) < 520 ? CAMERA.phoneViewScale : 1;
     this.post.setSize(w, hh);
     this.world?.resize(w, hh, dpr);
     const portrait = hh > w * 1.1 && Math.min(w, hh) < 700;
