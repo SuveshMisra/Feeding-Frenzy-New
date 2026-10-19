@@ -109,15 +109,15 @@ export const PREY = {
 
 export const SPAWN = {
   edibleByStage: [
-    [52, 60],
-    [44, 52],
-    [38, 44],
+    [60, 68],
+    [50, 58],
+    [43, 50],
   ] as const,
   /** Tier-1 school size by player stage: smaller schools once they're just snacks. */
   schoolSizeByStage: [
-    [10, 16],
-    [7, 12],
-    [5, 8],
+    [11, 17],
+    [8, 13],
+    [5, 9],
   ] as const,
   threatSafeMultiplier: 1.5,
   despawnMargin: 14,

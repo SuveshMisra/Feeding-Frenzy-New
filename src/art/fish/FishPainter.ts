@@ -786,6 +786,37 @@ function paintPattern(
       }
       break;
     }
+    case 'clown': {
+      // Accent bands edged in accent2, each drawn as a wide edge stroke under a narrower fill stroke.
+      const bands = [
+        { tn: 0.24, w: 0.17 },
+        { tn: 0.54, w: 0.15 },
+        { tn: 0.9, w: 0.08 },
+      ];
+      const yt = L.bounds.maxY;
+      const yb = L.bounds.minY;
+      for (const b of bands) {
+        const x = L.xAt(b.tn);
+        const path = (): void => {
+          k.beginPath();
+          for (let s = 0; s <= 12; s++) {
+            const yy = lerp(yt, yb, s / 12);
+            const bow = Math.sin((s / 12) * Math.PI) * L.H * 0.035;
+            if (s === 0) k.moveTo(X(x - bow), Y(yy));
+            else k.lineTo(X(x - bow), Y(yy));
+          }
+        };
+        k.strokeStyle = rgba(c.accent2 ?? '#111', 0.95);
+        k.lineWidth = U(L.H * (b.w + 0.05));
+        path();
+        k.stroke();
+        k.strokeStyle = rgba(c.accent, 0.96);
+        k.lineWidth = U(L.H * b.w);
+        path();
+        k.stroke();
+      }
+      break;
+    }
     case 'photophores': {
       const rows = [
         { rel: -0.55, n: 12, r: 0.03 },
