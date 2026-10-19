@@ -722,7 +722,7 @@ export class World {
     const over = this.lives.lose();
     this.gameOverPending = over;
     this.phase = 'dead';
-    this.phaseTimer = over ? 1.8 : 1.5;
+    this.phaseTimer = over ? 1.8 : 0.9;
     this.events.emit('death', { lives: this.lives.count, x: p.x, y: p.y, gameOver: over });
   }
 

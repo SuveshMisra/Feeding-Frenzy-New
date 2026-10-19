@@ -54,6 +54,8 @@ export class PostFX {
   private shock!: ShockWaveEffect;
   private ca!: ChromaticAberrationEffect;
   private caAmount = 0;
+  /** Draw the aberration pass once while it is invisible so its shader is compiled before the first hit. */
+  private warmCa = true;
   private hurtAmount = 0;
   private frenzy = 0;
   private darkTarget = 0;
@@ -154,6 +156,7 @@ export class PostFX {
     this.ca = new ChromaticAberrationEffect({ offset: new Vector2(0, 0), radialModulation: true, modulationOffset: 0.2 });
     this.caPass = new EffectPass(cam, this.ca);
     this.caPass.enabled = false;
+    this.warmCa = true;
     this.composer.addPass(this.caPass);
     this.mainPass = new EffectPass(cam, ...effects);
     this.composer.addPass(this.mainPass);
@@ -284,6 +287,10 @@ export class PostFX {
   }
 
   render(dt: number): void {
+    if (this.warmCa) {
+      this.warmCa = false;
+      this.caPass.enabled = true;
+    }
     this.composer.render(dt);
   }
 

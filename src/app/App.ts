@@ -263,7 +263,7 @@ export class App {
     this.state = 'paused';
     this.loop.simulate = false;
     this.input.enabled = false;
-    this.screens.showPause(this.endless);
+    this.screens.showPause(this.world?.level ?? null, this.endless);
     this.audio.muffle(true);
   }
 
@@ -461,7 +461,7 @@ export class App {
     ev.on('death', (e) => {
       this.rig.addTrauma(0.65);
       this.post.hurt(1);
-      this.slowMo(0.7, 0.35);
+      this.slowMo(0.45, 0.5);
       sfx.play('death', { pan: pan(e.x) });
       this.audio.duckMusic(0.5, 1.2);
       if (!e.gameOver) this.hud.banner('Chomped!', `${e.lives} ${e.lives === 1 ? 'life' : 'lives'} left`, 'danger', 1.6);

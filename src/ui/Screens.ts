@@ -145,6 +145,7 @@ export class Screens {
   private backing = false;
   /** The paused run is endless (the pause menu offers biomes instead of levels). */
   private pausedEndless = false;
+  private pausedLevel: LevelDef | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -797,9 +798,8 @@ export class Screens {
     this.mount(el, back);
   }
 
-  showIntro(level: LevelDef, done: () => void): void {
-    this.hide();
-    this.skipIntro();
+  /** The level's twist first, then what is new compared with the level before it. */
+  private levelNotes(level: LevelDef): string[] {
     const notes: string[] = [];
     if (level.tip) notes.push(level.tip);
     const prev = LEVELS[level.index - 1];
@@ -817,6 +817,13 @@ export class Screens {
         notes.push('Grab pearls from open oysters for big points');
       }
     }
+    return notes;
+  }
+
+  showIntro(level: LevelDef, done: () => void): void {
+    this.hide();
+    this.skipIntro();
+    const notes = this.levelNotes(level);
     const boss = level.boss;
     const el = h(
       'div',
@@ -858,12 +865,23 @@ export class Screens {
     it.done();
   }
 
-  showPause(endless = this.pausedEndless): void {
+  showPause(level = this.pausedLevel, endless = this.pausedEndless): void {
+    this.pausedLevel = level;
     this.pausedEndless = endless;
+    const notes = level ? this.levelNotes(level) : [];
+    const title = level?.boss ? level.boss.name : level?.endless ? 'Endless' : level?.name;
     const el = h(
       'div',
       { class: 'screen panel pause-screen' },
       h('h2', { text: 'Paused' }),
+      notes.length > 0
+        ? h(
+            'div',
+            { class: 'pause-tips' },
+            h('div', { class: 'pause-tips-title', text: title ? `Tips \u00b7 ${title}` : 'Tips' }),
+            h('ul', {}, ...notes.map((n, i) => h('li', { class: i === 0 && level?.tip ? 'twist' : '', text: n }))),
+          )
+        : null,
       h(
         'div',
         { class: 'menu' },
