@@ -1,8 +1,11 @@
 import type { Stage, Tier } from '../../config/tuning';
 
-/** The player can eat any fish whose tier is at or below its stage. Tier 4 is never edible. */
+/**
+ * The player can eat any fish whose tier is at or below its stage, so tier 4 only at the apex
+ * stage. Great whites, bosses and event giants aren't spawner fish and never go through this.
+ */
 export function playerCanEat(stage: Stage, tier: Tier): boolean {
-  return tier < 4 && tier <= stage;
+  return tier <= stage;
 }
 
 /** How big a mouthful a fish is for the player, from 1 (its own size class) down to 0.25 (tiny fry). */
@@ -40,10 +43,17 @@ export function edibleTierWeights(stage: Stage): { w: number; v: Tier }[] {
         { w: 0.14, v: 2 },
         { w: 0.22, v: 1 },
       ];
+    case 4:
+      return [
+        { w: 0.36, v: 4 },
+        { w: 0.34, v: 3 },
+        { w: 0.12, v: 2 },
+        { w: 0.18, v: 1 },
+      ];
   }
 }
 
-/** Tiers used for threats at a given stage. */
+/** Tiers used for threats at a given stage (none at the apex). */
 export function threatTierWeights(stage: Stage): { w: number; v: Tier }[] {
   switch (stage) {
     case 1:
@@ -59,5 +69,7 @@ export function threatTierWeights(stage: Stage): { w: number; v: Tier }[] {
       ];
     case 3:
       return [{ w: 1, v: 4 }];
+    case 4:
+      return [];
   }
 }

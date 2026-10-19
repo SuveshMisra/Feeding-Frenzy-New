@@ -19,24 +19,26 @@ describe('food chain', () => {
     expect(playerCanEat(3, 1)).toBe(true);
   });
 
-  it('never lets the player eat tier 4', () => {
+  it('only lets the apex stage eat tier 4, and the apex eats everything', () => {
     for (const s of [1, 2, 3] as Stage[]) expect(playerCanEat(s, 4)).toBe(false);
+    for (const t of [1, 2, 3, 4] as Tier[]) expect(playerCanEat(4, t)).toBe(true);
   });
 
   it('treats every non-edible fish as a threat', () => {
-    for (const s of [1, 2, 3] as Stage[]) {
+    for (const s of [1, 2, 3, 4] as Stage[]) {
       for (const t of [1, 2, 3, 4] as Tier[]) expect(isThreat(s, t)).toBe(!playerCanEat(s, t));
     }
   });
 
   it('only spawns edible tiers as food and threat tiers as threats', () => {
-    for (const s of [1, 2, 3] as Stage[]) {
+    for (const s of [1, 2, 3, 4] as Stage[]) {
       for (const { v } of edibleTierWeights(s)) expect(playerCanEat(s, v)).toBe(true);
       for (const { v } of threatTierWeights(s)) expect(isThreat(s, v)).toBe(true);
       const sum = (a: { w: number }[]): number => a.reduce((t, x) => t + x.w, 0);
       expect(sum(edibleTierWeights(s))).toBeCloseTo(1);
-      expect(sum(threatTierWeights(s))).toBeCloseTo(1);
+      expect(sum(threatTierWeights(s))).toBeCloseTo(s === 4 ? 0 : 1);
     }
+    expect(edibleTierWeights(4).map((w) => w.v)).toContain(4);
   });
 
   it('rates a fish of the player\'s own size class as a full meal and smaller fry as snacks', () => {
@@ -46,6 +48,7 @@ describe('food chain', () => {
     expect(mealSize(2, 1)).toBe(0.5);
     expect(mealSize(3, 2)).toBe(0.5);
     expect(mealSize(3, 1)).toBe(0.25);
+    expect(mealSize(4, 4)).toBe(1);
   });
 
   it('detects touching circles', () => {

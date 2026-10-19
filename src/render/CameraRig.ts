@@ -65,7 +65,7 @@ export class CameraRig {
 
   /** View height for a growth stage, widened on narrow (portrait) screens. */
   stageViewHeight(stageIndex: number): number {
-    const base = CAMERA.viewHeightByStage[clamp(stageIndex, 0, 2)];
+    const base = CAMERA.viewHeightByStage[clamp(stageIndex, 0, CAMERA.viewHeightByStage.length - 1)];
     const a = this.camera.aspect;
     if (a >= 1.2) return base;
     const minW = base * 1.2;

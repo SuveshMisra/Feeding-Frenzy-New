@@ -1,6 +1,6 @@
 import { SPECIES, type SpeciesId } from '../../config/species';
 import type { LevelDef } from '../../config/levels';
-import { SPAWN, type Stage, type Tier } from '../../config/tuning';
+import { SPAWN, STAGE_COUNT, type Stage, type Tier } from '../../config/tuning';
 import { clamp } from '../../engine/math';
 import { Rng } from '../../engine/rng';
 import { Fish, type School } from '../entities/Fish';
@@ -61,7 +61,7 @@ export class Spawner {
   }
 
   threatTarget(stage: Stage): number {
-    return this.level.difficulty.predators[stage - 1] + this.extraThreats;
+    return (this.level.difficulty.predators[stage - 1] ?? 0) + this.extraThreats;
   }
 
   counts(stage: Stage): { edible: number; threats: number } {
@@ -89,7 +89,11 @@ export class Spawner {
   }
 
   update(dt: number, ctx: SpawnContext): void {
-    if (ctx.stage !== this.lastStage) this.rollTarget(ctx.stage);
+    if (ctx.stage !== this.lastStage) {
+      const apex = ctx.stage === STAGE_COUNT && ctx.stage > this.lastStage;
+      this.rollTarget(ctx.stage);
+      if (apex && ctx.hasPlayer) this.spawnApexWave(ctx);
+    }
     this.despawn(ctx);
     if (ctx.hasPlayer) {
       this.goldenTimer -= dt;
@@ -177,9 +181,22 @@ export class Spawner {
     return true;
   }
 
+  /**
+   * Reaching the apex sends in the big fish at once: the leftover fry would otherwise fill the
+   * edible target and the wide apex view rarely lets them despawn.
+   */
+  private spawnApexWave(ctx: SpawnContext): void {
+    for (let i = 0; i < SPAWN.apexWave; i++) {
+      const id = this.pickSpecies(i % 2 === 0 ? 4 : 3) ?? this.pickSpecies(3);
+      if (!id) return;
+      const spot = this.spawnSpot(ctx, id, false, false);
+      if (spot) this.spawnSingle(id, spot, false);
+    }
+  }
+
   /** A golden version of the biggest fish the player can eat right now. */
   private spawnGolden(ctx: SpawnContext): boolean {
-    const id = this.pickSpecies(Math.min(ctx.stage, 3) as Tier) ?? this.pickSpecies(1);
+    const id = this.pickSpecies(ctx.stage) ?? this.pickSpecies(1);
     if (!id) return false;
     const spot = this.spawnSpot(ctx, id, false, false);
     if (!spot) return false;

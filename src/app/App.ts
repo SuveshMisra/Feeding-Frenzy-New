@@ -1,7 +1,7 @@
 import { Scene, Vector2 } from 'three';
 import { CHAPTERS, LEVELS, LEVEL_IDS, endlessLevel, resolveBiome, type LevelDef } from '../config/levels';
 import { SPECIES, type SpeciesId } from '../config/species';
-import type { Tier } from '../config/tuning';
+import { STAGE_COUNT, type Tier } from '../config/tuning';
 import { Loop } from '../engine/Loop';
 import { Renderer } from '../engine/Renderer';
 import { shared } from '../engine/materialPatches';
@@ -433,7 +433,9 @@ export class App {
       this.post.shockwave(e.x, e.y, 0.3, 1.1);
       this.rig.addTrauma(0.22);
       this.punch = 1;
-      this.hud.banner('You grew!', e.stage === 3 ? 'Only the biggest can stop you now' : 'Bigger fish are on the menu', 'grow', 2);
+      const apex = e.stage === STAGE_COUNT;
+      const sub = apex ? 'Eat anything that swims to finish the level' : e.stage === 3 ? 'Only the biggest can stop you now' : 'Bigger fish are on the menu';
+      this.hud.banner(apex ? 'Apex predator!' : 'You grew!', sub, 'grow', apex ? 2.6 : 2);
       sfx.play('grow');
       this.audio.music.stinger('grow');
       this.audio.music.setStage(e.stage);

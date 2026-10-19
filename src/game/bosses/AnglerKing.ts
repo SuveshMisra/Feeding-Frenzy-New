@@ -28,6 +28,10 @@ export const ANGLER = {
   stun: [5.5, 4.8, 4.2],
   /** The last phase lunges twice: the first crash only staggers it. */
   stagger: 0.75,
+  /** Speed it bounces back off a side wall at; the daze damps it to a stop a few units out. */
+  wallRecoil: 10,
+  /** The limp lure stays at least this far inside the side walls, where the player can reach it. */
+  lureWallGap: 3,
   hurt: 1.2,
   phaseUp: 2.8,
   /** Seconds it takes to swim in once the fight starts. */
@@ -429,6 +433,9 @@ export class AnglerKing extends BossBase {
     this.lunges--;
     if (this.lunges > 0) this.enter('recover');
     else this.daze();
+    // Rebound off a side wall into open water so the lure doesn't end up off-screen.
+    const wall = mx > this.W2 - 0.6 ? 1 : mx < -this.W2 + 0.6 ? -1 : 0;
+    if (wall) f.vel.x = -wall * ANGLER.wallRecoil;
   }
 
   private daze(): void {
@@ -575,7 +582,8 @@ export class AnglerKing extends BossBase {
       if (this.state === 'strike' || this.state === 'telegraph') rate = 12;
     } else {
       // Limp: dangles below and ahead of the head, swinging.
-      tx = ax + f.facing * 1.7 + Math.sin(this.time * 1.8) * 0.35;
+      const gap = this.W2 - ANGLER.lureWallGap;
+      tx = clamp(ax + f.facing * 1.7 + Math.sin(this.time * 1.8) * 0.35, -gap, gap);
       ty = ay - 2.3;
       rate = 2.6;
     }

@@ -17,7 +17,7 @@ import { HEROES, HERO_IDS, UPGRADES, endlessHeroes, heroesFor, upgradeCost, upgr
 import { CHALLENGE_COINS, challengeLabel } from '../game/systems/Challenges';
 import { ENDLESS } from '../game/systems/Endless';
 import type { SpeciesId } from '../config/species';
-import { BOOST, PUFF_ABILITY, SUCTION } from '../config/tuning';
+import { BOOST, PUFF_ABILITY, STAGE_COUNT, SUCTION } from '../config/tuning';
 import type { EndlessResult, LevelResult } from '../game/World';
 import { levelOpen, type ControlScheme, type QualitySetting, type SaveStore, type Settings } from '../app/Save';
 import { ABILITY_ICONS } from './Hud';
@@ -751,7 +751,7 @@ export class Screens {
           touch ? 'Touch and drag anywhere to steer with the virtual stick.' : 'Lead your fish with the mouse, or use WASD / arrow keys.',
           'tip-move',
         ),
-        tip(ICONS.eat, 'Eat smaller fish', 'Green-ringed fish in the food chain are food. Fill the growth meter to grow, and grow 3 times to clear the level.', 'tip-eat'),
+        tip(ICONS.eat, 'Eat smaller fish', 'Green-ringed fish in the food chain are food. Fill the growth meter to grow. At the last stage you\u2019re the apex predator and can eat any fish; fill that bar to clear the level.', 'tip-eat'),
         tip(ICONS.danger, 'Escape bigger fish', 'Red-ringed fish hunt you when you come close and their eyes glow red. Swim away and they give up.', 'tip-danger'),
         tip(
           ICONS.boost,
@@ -837,7 +837,7 @@ export class Screens {
           ? `You start fully grown \u00b7 Dodge its attacks, then bite its weak spot \u00b7 ${boss.phases} phases`
           : level.endless
             ? `Eat ${level.fishPerStage} fish to grow \u00b7 No finish line \u00b7 The run ends when your lives run out`
-            : `Eat ${level.fishPerStage} fish to grow \u00b7 3 growth stages`,
+            : `Eat ${level.fishPerStage} fish to grow \u00b7 ${STAGE_COUNT} growth stages \u00b7 At the last, eat anything!`,
       }),
       ...notes.map((n, i) => h('div', { class: `intro-note ${i === 0 && level.tip ? 'twist' : ''}`.trim(), text: n })),
     );

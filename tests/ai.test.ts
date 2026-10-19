@@ -176,6 +176,16 @@ describe('Spawner', () => {
     expect(threats).toBe(s.threatTarget(1));
   });
 
+  it('turns the whole roster into food at the apex stage', () => {
+    const s = new Spawner(level, world, 3);
+    const c = ctx(4);
+    s.populate(c);
+    for (let t = 0; t < 20; t += DT) s.update(DT, c);
+    expect(s.threatTarget(4)).toBe(0);
+    expect(s.counts(4).threats).toBe(0);
+    expect(s.fish.some((f) => f.alive && f.tier === 4)).toBe(true);
+  });
+
   it('never spawns a threat inside the safety distance', () => {
     for (let seed = 1; seed < 25; seed++) {
       const s = new Spawner(level, world, seed);

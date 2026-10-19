@@ -1,9 +1,9 @@
-import { FISH_PER_STAGE, STAGE_COUNT, type Stage } from '../../config/tuning';
+import { FISH_PER_STAGE, PRE_APEX_STAGE_COUNT, STAGE_COUNT, type Stage } from '../../config/tuning';
 
 export type GrowthResult = 'none' | 'grew' | 'complete';
 
 /**
- * Growth meter: `perStage` points fill a stage; filling the last stage completes the level.
+ * Growth meter: `perStage` points fill a stage; filling the last of `stages` completes the level.
  * An `endless` meter just stays full at the last stage instead.
  */
 export class Growth {
@@ -15,6 +15,7 @@ export class Growth {
   constructor(
     readonly perStage = FISH_PER_STAGE,
     readonly endless = false,
+    readonly stages: Stage = endless ? PRE_APEX_STAGE_COUNT : STAGE_COUNT,
   ) {}
 
   add(points = 1): GrowthResult {
@@ -22,7 +23,7 @@ export class Growth {
     this.eaten++;
     this.points += points;
     if (this.points < this.perStage) return 'none';
-    if (this.stage < STAGE_COUNT) {
+    if (this.stage < this.stages) {
       this.points -= this.perStage;
       this.stage = (this.stage + 1) as Stage;
       return 'grew';
@@ -35,7 +36,7 @@ export class Growth {
 
   /** At the last stage with the meter full (complete, or topped out in endless). */
   get full(): boolean {
-    return this.stage === STAGE_COUNT && this.points >= this.perStage;
+    return this.stage === this.stages && this.points >= this.perStage;
   }
 
   get stageProgress(): number {
@@ -44,7 +45,7 @@ export class Growth {
 
   /** Progress over the whole level, 0..1 across all stages. */
   get totalProgress(): number {
-    return Math.min(1, ((this.stage - 1) * this.perStage + this.points) / (this.perStage * STAGE_COUNT));
+    return Math.min(1, ((this.stage - 1) * this.perStage + this.points) / (this.perStage * this.stages));
   }
 
   forceStage(stage: Stage): void {
@@ -55,7 +56,7 @@ export class Growth {
 
   /** Starts fully grown with nothing left to fill (boss fights are won another way). */
   fillUp(): void {
-    this.stage = STAGE_COUNT as Stage;
+    this.stage = this.stages;
     this.points = this.perStage;
     this.complete = true;
   }

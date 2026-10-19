@@ -1,11 +1,14 @@
 export const GAME_TITLE = 'Fin Frenzy';
 
 export type Tier = 1 | 2 | 3 | 4;
-export type Stage = 1 | 2 | 3;
+export type Stage = 1 | 2 | 3 | 4;
 
 /** Every fish eaten is one growth point; this many points fill one stage. */
 export const FISH_PER_STAGE = 50;
-export const STAGE_COUNT = 3;
+/** The last stage is the apex: every fish in the roster is food and filling it clears the level. */
+export const STAGE_COUNT = 4;
+/** Endless runs and boss fights stop short of the apex, so there is always something to fear. */
+export const PRE_APEX_STAGE_COUNT = 3;
 
 export const LIVES = { start: 3, max: 5 };
 export const RESPAWN_SHIELD_S = 2.5;
@@ -19,8 +22,8 @@ export const COMBO = {
 export const TIER_POINTS: Record<Tier, number> = { 1: 10, 2: 25, 3: 50, 4: 100 };
 
 export const PLAYER = {
-  lengthByStage: [1.15, 2.3, 3.9] as const,
-  speedByStage: [8, 9.4, 10.8] as const,
+  lengthByStage: [1.15, 2.3, 3.9, 8] as const,
+  speedByStage: [8, 9.4, 10.8, 12] as const,
   accel: 36,
   /** Mouse-follow slows down inside this radius (scaled by stage length). */
   slowRadius: 1.8,
@@ -70,7 +73,7 @@ export const SUCTION = {
 
 export const CAMERA = {
   fov: 40,
-  viewHeightByStage: [14, 19.5, 26] as const,
+  viewHeightByStage: [14, 19.5, 26, 30] as const,
   followLambda: 3.4,
   lookAhead: 0.32,
   marginBottom: 1.2,
@@ -112,13 +115,17 @@ export const SPAWN = {
     [60, 68],
     [50, 58],
     [43, 50],
+    [34, 40],
   ] as const,
   /** Tier-1 school size by player stage: smaller schools once they're just snacks. */
   schoolSizeByStage: [
     [11, 17],
     [8, 13],
     [5, 9],
+    [4, 7],
   ] as const,
+  /** Big fish sent in the moment the player reaches the apex stage. */
+  apexWave: 6,
   threatSafeMultiplier: 1.5,
   despawnMargin: 14,
   spawnMargin: 3,

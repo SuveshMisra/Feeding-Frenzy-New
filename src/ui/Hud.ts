@@ -4,7 +4,7 @@ import type { Fish } from '../game/entities/Fish';
 import type { Tier } from '../config/tuning';
 import type { AbilityKind } from '../config/progression';
 import type { FeatureHud } from '../game/features/types';
-import { HAZARD } from '../config/tuning';
+import { HAZARD, STAGE_COUNT } from '../config/tuning';
 import { playerCanEat } from '../game/systems/FoodChain';
 import { challengeLabel, progressText } from '../game/systems/Challenges';
 import { GOLD_FRENZY } from '../game/systems/Scoring';
@@ -125,10 +125,11 @@ export class Hud {
     this.comboText = h('div', { class: 'hud-combo-text' });
     this.comboEl = h('div', { class: 'hud-combo' }, h('div', { class: 'hud-combo-bar' }, this.comboFill), this.comboText);
     const segWrap = h('div', { class: 'hud-growth-segs' });
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < STAGE_COUNT; i++) {
       const fill = h('div', { class: 'seg-fill' });
       this.segs.push(fill);
-      segWrap.append(h('div', { class: 'seg' }, fill, h('span', { class: 'seg-num', text: String(i + 1) })));
+      const apex = i + 1 === STAGE_COUNT;
+      segWrap.append(h('div', { class: apex ? 'seg apex' : 'seg' }, fill, h('span', { class: 'seg-num', text: apex ? '\u2605' : String(i + 1) })));
     }
     this.stageText = h('span', { class: 'hud-stage', text: 'Stage 1' });
     this.growthText = h('span', { class: 'hud-count', text: '0/20' });
@@ -428,14 +429,23 @@ export class Hud {
     }
 
     const g = w.growth;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < this.segs.length; i++) {
       const stageIdx = i + 1;
       const fill = g.full || stageIdx < g.stage ? 1 : stageIdx === g.stage ? g.stageProgress : 0;
+      const seg = this.segs[i].parentElement!;
+      seg.hidden = stageIdx > g.stages;
       this.segs[i].style.transform = `scaleX(${fill})`;
-      this.segs[i].parentElement!.classList.toggle('active', stageIdx === g.stage && !g.full);
-      this.segs[i].parentElement!.classList.toggle('done', fill >= 1);
+      seg.classList.toggle('active', stageIdx === g.stage && !g.full);
+      seg.classList.toggle('done', fill >= 1);
     }
-    this.stageText.textContent = g.full ? (w.endless ? 'Fully grown \u2013 survive!' : 'Fully grown!') : `Stage ${g.stage}`;
+    this.stageText.textContent = g.full
+      ? w.endless
+        ? 'Fully grown \u2013 survive!'
+        : 'Fully grown!'
+      : g.stage === STAGE_COUNT
+        ? 'Apex \u2013 eat anything!'
+        : `Stage ${g.stage}`;
+    this.growthEl.classList.toggle('apex', g.stage === STAGE_COUNT);
     this.growthText.textContent = g.full ? '' : `${g.points}/${g.perStage}`;
     if (g.stage !== this.lastStage) {
       if (this.lastStage) this.pulseGrowth();

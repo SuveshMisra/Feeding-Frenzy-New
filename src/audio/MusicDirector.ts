@@ -366,7 +366,7 @@ export class MusicDirector {
       perc1: 1,
       perc2: s >= 2 || f > 0.5 ? 1 : 0,
       perc3: s >= 3 || f > 0.5 ? 1 : 0,
-      sparkle: f,
+      sparkle: s >= 4 ? Math.max(f, 0.6) : f,
     };
   }
 

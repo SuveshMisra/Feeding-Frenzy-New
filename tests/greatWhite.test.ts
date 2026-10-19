@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { chapterLevels } from '../src/config/levels';
 import { SPECIES } from '../src/config/species';
-import { CAMERA, PLAYER } from '../src/config/tuning';
+import { CAMERA, PLAYER, STAGE_COUNT } from '../src/config/tuning';
 import { GREAT_WHITE, greatWhiteLength, laneY } from '../src/game/hazards/GreatWhite';
 
 describe('Great white', () => {
@@ -33,8 +33,11 @@ describe('Great white', () => {
     }
   });
 
-  it('dwarfs the fully grown player', () => {
-    CAMERA.viewHeightByStage.forEach((h, i) => expect(greatWhiteLength(h)).toBeGreaterThan(PLAYER.lengthByStage[i] * 4));
+  it('dwarfs the player, even at the apex', () => {
+    CAMERA.viewHeightByStage.forEach((h, i) => {
+      const apex = i + 1 === STAGE_COUNT;
+      expect(greatWhiteLength(h)).toBeGreaterThan(PLAYER.lengthByStage[i] * (apex ? 2.5 : 4));
+    });
     expect(SPECIES.greatWhite.tier).toBe(4);
   });
 

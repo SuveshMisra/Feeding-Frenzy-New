@@ -77,7 +77,7 @@ describe('endless growth', () => {
   it('a normal meter still completes', () => {
     const g = new Growth(10);
     let last = 'none';
-    for (let i = 0; i < 30; i++) last = g.add(1);
+    for (let i = 0; i < 40; i++) last = g.add(1);
     expect(last).toBe('complete');
     expect(g.full).toBe(true);
   });

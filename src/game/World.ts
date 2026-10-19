@@ -3,7 +3,16 @@ import { createNoise2D } from 'simplex-noise';
 import { levelEvents, type BiomeId, type LevelDef } from '../config/levels';
 import { SPECIES, type SpeciesId } from '../config/species';
 import { HEROES, bonusLives, cooldownMul, shieldMul, speedMul, type HeroId, type UpgradeKind } from '../config/progression';
-import { LIVES, PUFF_ABILITY, RESPAWN_SHIELD_S, SUCTION, TIER_POINTS, type Stage, type Tier } from '../config/tuning';
+import {
+  LIVES,
+  PRE_APEX_STAGE_COUNT,
+  PUFF_ABILITY,
+  RESPAWN_SHIELD_S,
+  SUCTION,
+  TIER_POINTS,
+  type Stage,
+  type Tier,
+} from '../config/tuning';
 import { Emitter } from '../engine/events';
 import { DEG, clamp, distToSegmentSq } from '../engine/math';
 import { Rng } from '../engine/rng';
@@ -246,7 +255,7 @@ export class World {
       surfaceY: H,
       floorAt: this.env.floorAt,
     };
-    this.growth = new Growth(opts.level.fishPerStage, this.endless);
+    this.growth = new Growth(opts.level.fishPerStage, this.endless, opts.level.boss ? PRE_APEX_STAGE_COUNT : undefined);
     // Boss fights start fully grown.
     if (this.mode === 'play' && opts.level.boss) this.growth.fillUp();
     this.spawner = new Spawner(opts.level, this.bounds);
@@ -1004,8 +1013,9 @@ export class World {
       this.bossDefeated(this.player.x, this.player.y);
       return;
     }
-    this.growth.forceStage(3);
-    this.player.setStage(3);
+    this.growth.forceStage(this.growth.stages);
+    this.player.setStage(this.growth.stages);
+    this.rig.viewHTarget = this.rig.stageViewHeight(this.growth.stages - 1);
     this.growth.points = this.growth.perStage - 1;
     this.cheatGrow();
   }
