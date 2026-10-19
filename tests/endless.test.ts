@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ENDLESS_FISH_PER_STAGE, ENDLESS_UNLOCK, LEVELS, endlessBases, endlessLevel, levelEvents } from '../src/config/levels';
-import { endlessCoinsFor, endlessHeroes, heroesFor } from '../src/config/progression';
+import { ENDLESS_FISH_PER_STAGE, LEVELS, endlessBases, endlessLevel, levelEvents } from '../src/config/levels';
+import { endlessHeroes, heroesFor } from '../src/config/progression';
 import { ENDLESS, dangerLevel, dangerProgress, endlessTuning } from '../src/game/systems/Endless';
 import { Growth } from '../src/game/systems/Growth';
 import { Scoring } from '../src/game/systems/Scoring';
@@ -121,19 +121,9 @@ describe('endlessLevel', () => {
     const ids = new Set(LEVELS.map((l) => l.id));
     for (const base of bases) expect(ids.has(endlessLevel(base).id)).toBe(false);
   });
-
-  it('is unlocked by a real level', () => {
-    expect(LEVELS.some((l) => l.id === ENDLESS_UNLOCK && l.boss)).toBe(true);
-  });
 });
 
-describe('endless rewards and fish', () => {
-  it('pays coins from the score only', () => {
-    expect(endlessCoinsFor(0)).toBe(0);
-    expect(endlessCoinsFor(-100)).toBe(0);
-    expect(endlessCoinsFor(10000)).toBeGreaterThan(endlessCoinsFor(5000));
-  });
-
+describe('endless fish', () => {
   it('allows every unlocked fish, whatever its campaign start level', () => {
     const unlocked = ['finn', 'spike'] as const;
     expect(endlessHeroes(unlocked)).toEqual(['finn', 'spike']);

@@ -77,7 +77,6 @@ export interface EndlessResult {
   danger: number;
   fishEaten: number;
   maxCombo: number;
-  goldenCoins: number;
 }
 
 export interface WorldEvents {
@@ -654,10 +653,12 @@ export class World {
     });
     if (f.golden && this.mode === 'play') {
       this.scoring.startGoldFrenzy();
-      this.goldenCoins += GOLDEN.coins;
+      // Endless is played for score alone.
+      const coins = this.endless ? 0 : GOLDEN.coins;
+      this.goldenCoins += coins;
       this.effects.sparkle(f.x, f.y, tmpColor.set('#ffe27a'), 40, 5, 0.5);
       this.effects.ring(f.x, f.y, tmpColor.set('#ffd257'), 5, 0.6, 0.2);
-      this.events.emit('golden', { x: f.x, y: f.y, coins: GOLDEN.coins });
+      this.events.emit('golden', { x: f.x, y: f.y, coins });
       this.challenges.onGolden();
     }
     if (grow === 'grew') {
@@ -829,7 +830,6 @@ export class World {
       danger: this.dangerLevel,
       fishEaten: this.scoring.fishEaten,
       maxCombo: this.scoring.maxCombo,
-      goldenCoins: this.goldenCoins,
     };
   }
 

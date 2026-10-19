@@ -69,7 +69,7 @@ export function heroesFor(levelIndex: number, unlocked: readonly HeroId[], testM
   return HERO_IDS.filter((id) => testMode || (unlocked.includes(id) && levelIndex >= HEROES[id].minLevel));
 }
 
-/** Endless runs come after the campaign's first chapter, so every unlocked fish can go. */
+/** Endless has no place in the campaign, so every unlocked fish can go. */
 export function endlessHeroes(unlocked: readonly HeroId[], testMode = false): HeroId[] {
   return HERO_IDS.filter((id) => testMode || unlocked.includes(id));
 }
@@ -136,9 +136,4 @@ export const COINS = { base: 20, perStar: 15, scorePer: 250, firstClear: 50 };
 /** Coins awarded for clearing a level. */
 export function coinsFor(score: number, stars: number, firstClear: boolean): number {
   return COINS.base + COINS.perStar * stars + Math.floor(Math.max(0, score) / COINS.scorePer) + (firstClear ? COINS.firstClear : 0);
-}
-
-/** Coins for an endless run: the score's share only, so no bonus for dying straight away. */
-export function endlessCoinsFor(score: number): number {
-  return Math.floor(Math.max(0, score) / COINS.scorePer);
 }

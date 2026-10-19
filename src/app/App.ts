@@ -1,7 +1,7 @@
 import { Scene, Vector2 } from 'three';
 import { CHAPTERS, LEVELS, LEVEL_IDS, endlessLevel, resolveBiome, type LevelDef } from '../config/levels';
 import { SPECIES, type SpeciesId } from '../config/species';
-import { CAMERA, STAGE_COUNT, type Tier } from '../config/tuning';
+import { CAMERA, PRE_APEX_STAGE_COUNT, STAGE_COUNT, type Tier } from '../config/tuning';
 import { Loop } from '../engine/Loop';
 import { Renderer } from '../engine/Renderer';
 import { shared } from '../engine/materialPatches';
@@ -20,7 +20,7 @@ import { h } from '../ui/dom';
 import { AudioEngine } from '../audio/AudioEngine';
 import { DEBUG, DebugPanel } from '../debug/DebugPanel';
 import { SaveStore, levelOpen, type Settings } from './Save';
-import { coinsFor, endlessCoinsFor, endlessHeroes, heroesFor, type HeroId, type UpgradeKind } from '../config/progression';
+import { coinsFor, endlessHeroes, heroesFor, type HeroId, type UpgradeKind } from '../config/progression';
 import { CHALLENGE_COINS } from '../game/systems/Challenges';
 import type { SoundName } from '../audio/Sfx';
 import { AdaptiveQuality, PRESETS, isTouchDevice, lowerLevel, resolveQuality, type QualityLevel, type QualityPreset } from './Quality';
@@ -329,14 +329,11 @@ export class App {
     this.audio.music.setScene('outro');
   }
 
-  /** Endless runs always end in a game over: bank the score as coins and record the biome best. */
+  /** Endless runs always end in a game over and pay no coins: they only record the biome best. */
   private endlessOver(r: EndlessResult): void {
     const prevBest = this.save.data.endless[r.biome] ?? 0;
     const isBest = this.save.recordEndless(r.biome, r.score);
-    const coins = endlessCoinsFor(r.score);
-    this.save.addCoins(coins);
-    this.screens.showEndlessResults(r, isBest, prevBest, coins + r.goldenCoins);
-    if (coins > 0) this.later(1500, () => this.audio.sfx.play('coin'));
+    this.screens.showEndlessResults(r, isBest, prevBest);
     if (isBest) this.later(1100, () => this.audio.sfx.play('challenge'));
   }
 
@@ -389,7 +386,10 @@ export class App {
 
   private chainFor(level: LevelDef): ChainEntry[] {
     const out: ChainEntry[] = [];
+    // Endless never reaches the apex stage, so its tier is never on the menu.
+    const top = level.endless ? PRE_APEX_STAGE_COUNT : STAGE_COUNT;
     for (const tier of [1, 2, 3, 4] as Tier[]) {
+      if (tier > top) break;
       const ids = level.roster[tier];
       if (!ids.length) continue;
       const id = ids[0];
@@ -535,11 +535,11 @@ export class App {
       this.hud.popup(e.x, e.y + 0.9, e.label, 'danger', 1.3);
     });
     ev.on('golden', (e) => {
-      this.hud.popup(e.x, e.y + 1, `+${e.coins} coins`, 'gold', 1.8);
+      if (e.coins > 0) this.hud.popup(e.x, e.y + 1, `+${e.coins} coins`, 'gold', 1.8);
       this.hud.banner('GOLDEN FRENZY!', 'Double points', 'gold', 1.6);
       this.save.addCoins(e.coins);
       sfx.play('golden', { pan: pan(e.x) });
-      setTimeout(() => sfx.play('coin', { pitch: 1.2 }), 160);
+      if (e.coins > 0) setTimeout(() => sfx.play('coin', { pitch: 1.2 }), 160);
       this.post.shockwave(e.x, e.y, 0.3, 0.8);
     });
     ev.on('challenge', (e) => {

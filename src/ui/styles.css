@@ -2209,21 +2209,6 @@ div.test-badge {
   background: linear-gradient(180deg, rgba(170, 60, 50, 0.6), rgba(70, 16, 36, 0.75));
 }
 
-.btn.endless-btn.locked {
-  cursor: default;
-  opacity: 0.6;
-  filter: grayscale(0.7);
-  transform: none;
-  box-shadow: none;
-}
-
-.btn-lock svg {
-  width: 16px;
-  height: 16px;
-  margin: -3px 8px 0 -4px;
-  vertical-align: middle;
-}
-
 .endless-intro {
   margin: -6px 0 2px;
   max-width: 560px;

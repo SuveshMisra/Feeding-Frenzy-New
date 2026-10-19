@@ -1603,8 +1603,6 @@ export function levelEvents(level: LevelDef): LevelEvents | null {
   return { every: [80, 120], pool: n < 2 ? ['baitBall'] : n < 5 ? ['baitBall', 'riptide'] : ['baitBall', 'whale', 'riptide'] };
 }
 
-/** Beating this level opens endless mode. */
-export const ENDLESS_UNLOCK = 'abyssKing';
 export const ENDLESS_FISH_PER_STAGE = 35;
 
 /** The levels endless mode can be played in: one per biome, Ocean I's originals. */

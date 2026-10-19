@@ -1,6 +1,5 @@
 import {
   CHAPTERS,
-  ENDLESS_UNLOCK,
   LEVELS,
   LEVEL_IDS,
   chapterAll,
@@ -89,9 +88,6 @@ const LOCK =
   '<svg viewBox="0 0 24 24"><path d="M7 10V7.5a5 5 0 0 1 10 0V10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><rect x="4.5" y="10" width="15" height="11" rx="2.6" fill="currentColor"/><circle cx="12" cy="15.5" r="1.8" fill="#052033"/></svg>';
 
 const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-
-/** The level whose clear opens endless mode. */
-const ENDLESS_GATE = LEVELS.find((l) => l.id === ENDLESS_UNLOCK)!;
 
 /** Intro-card line for the first level that can roll each mid-level event. */
 const EVENT_NOTES: Record<EventId, string> = {
@@ -242,14 +238,7 @@ export class Screens {
           if (!d.seenHowTo) this.showHowTo(() => this.showLevels(), () => this.showTitle());
           else this.showLevels();
         }),
-        this.endlessOpen()
-          ? this.btn('Endless', 'endless-btn', () => this.showEndless())
-          : h(
-              'button',
-              { class: 'btn endless-btn locked', attrs: { disabled: '', title: `Beat ${ENDLESS_GATE.name} to unlock endless mode` } },
-              h('span', { class: 'btn-lock', html: LOCK }),
-              'Endless',
-            ),
+        this.btn('Endless', 'endless-btn', () => this.showEndless()),
         this.btn('Shop', 'shop-btn', () => this.showShop(() => this.showTitle())),
         this.btn('How to play', '', () => this.showHowTo(() => this.showTitle(), () => this.showTitle())),
         this.btn('Settings', '', () => this.showSettings(() => this.showTitle())),
@@ -443,53 +432,38 @@ export class Screens {
     else this.act.play(index, options[0] ?? 'finn');
   }
 
-  private endlessOpen(): boolean {
-    const d = this.save.data;
-    return d.settings.testMode || Boolean(d.best[ENDLESS_UNLOCK]);
-  }
-
-  /** Endless mode's biome picker: any Ocean I biome whose level has been cleared. */
+  /** Endless mode's biome picker: every Ocean I biome, open from the start. */
   showEndless(): void {
     const d = this.save.data;
-    const bases = endlessBases();
-    let focus: HTMLElement | null = null;
-    const cards = bases.map((lv) => {
+    const cards = endlessBases().map((lv) => {
       const b = resolveBiome(lv);
-      const open = d.settings.testMode || Boolean(d.best[lv.id]);
       const best = d.endless[lv.biome] ?? 0;
       const featured = lv.cover ?? lv.roster[3][0] ?? lv.roster[2][0];
-      const card = h(
+      return h(
         'button',
         {
-          class: `level-card endless-card ${open ? (best ? 'cleared' : 'new') : 'locked'}`,
-          attrs: {
-            'aria-label': `Endless in ${lv.name}${open ? (best ? `, best ${formatScore(best)}` : ', no runs yet') : `, locked, clear level ${lv.index + 1} first`}`,
-            'aria-disabled': String(!open),
-          },
+          class: `level-card endless-card ${best ? 'cleared' : 'new'}`,
+          attrs: { 'aria-label': `Endless in ${lv.name}${best ? `, best ${formatScore(best)}` : ', no runs yet'}` },
           style: { background: `linear-gradient(180deg, ${b.fog.top} 0%, ${b.fog.mid} 52%, ${b.fog.bottom} 100%)` },
           on: {
             click: () => {
-              if (!open) return;
               this.act.click();
               this.startEndless(lv.index, () => this.showEndless());
             },
           },
         },
-        open ? null : h('div', { class: 'level-lock', html: LOCK }),
         featured ? h('img', { class: 'level-fish', attrs: { src: this.thumb(featured), alt: '' } }) : null,
         h('div', { class: 'level-name', text: lv.name }),
         h('div', { class: 'level-sub', text: lv.subtitle }),
-        h('div', { class: 'level-foot' }, h('div', { class: 'level-best', text: open ? (best ? `Best ${formatScore(best)}` : 'No runs yet') : `Clear level ${lv.index + 1} to unlock` })),
+        h('div', { class: 'level-foot' }, h('div', { class: 'level-best', text: best ? `Best ${formatScore(best)}` : 'No runs yet' })),
       );
-      if (!open) card.tabIndex = -1;
-      else if (!focus) focus = card;
-      return card;
     });
+    const focus = cards[0];
     const el = h(
       'div',
       { class: 'screen levels-screen endless-screen' },
       h('h2', { text: 'Endless' }),
-      h('p', { class: 'endless-intro', text: `Survive as long as you can. Danger rises every ${ENDLESS.step} seconds, and your points rise with it.` }),
+      h('p', { class: 'endless-intro', text: `Survive as long as you can. Danger rises every ${ENDLESS.step} seconds, and your points rise with it. Runs are for score only and pay no coins.` }),
       h('div', { class: 'level-board' }, h('div', { class: 'level-grid' }, ...cards)),
       h('div', { class: 'row' }, this.btn('Back', 'ghost', () => this.showTitle()), this.btn('Shop', 'shop-btn', () => this.showShop(() => this.showEndless()))),
     );
@@ -981,7 +955,7 @@ export class Screens {
   }
 
   /** The end of an endless run: how long it lasted, how bad it got, and the biome's best. */
-  showEndlessResults(r: EndlessResult, isBest: boolean, prevBest: number, coins: number): void {
+  showEndlessResults(r: EndlessResult, isBest: boolean, prevBest: number): void {
     const level = LEVELS[r.levelIndex];
     const rows: [string, string][] = [
       ['Time survived', formatTime(r.time)],
@@ -991,7 +965,6 @@ export class Screens {
       ['Biome best', formatScore(Math.max(prevBest, r.score))],
     ];
     const total = h('b', { class: 'count', text: '0' });
-    const coinsEl = h('b', { class: 'count', text: '+0' });
     const el = h(
       'div',
       { class: 'screen panel results-screen endless-results' },
@@ -1000,7 +973,6 @@ export class Screens {
       h('div', { class: 'result-rows' }, ...rows.map(([k, v]) => h('div', { class: 'result-row' }, h('span', { text: k }), h('b', { text: v })))),
       h('div', { class: 'result-total' }, h('span', { text: 'Score' }), total),
       isBest ? h('div', { class: 'new-best', text: prevBest > 0 ? `New best! Beat ${formatScore(prevBest)}` : 'New best!' }) : null,
-      h('div', { class: 'result-coins' }, h('span', { class: 'coin-icon', html: COIN }), h('span', { text: 'Coins' }), coinsEl),
       h(
         'div',
         { class: 'row' },
@@ -1011,7 +983,6 @@ export class Screens {
     );
     this.mount(el);
     this.countUp(total, r.score, 1.3);
-    this.countUp(coinsEl, coins, 1, '+', 1.5);
   }
 
   showGameOver(score: number, level: LevelDef): void {

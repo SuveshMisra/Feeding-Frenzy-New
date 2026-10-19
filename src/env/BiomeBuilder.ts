@@ -57,6 +57,10 @@ import { coralTowerGeometry, seaWhipGeometry, type LocalPerch } from './props/re
 import { tubeWormGeometry, whaleSkeletonGeometry } from './props/abyss';
 import { buildAmbientSchools, buildBubbleColumns, buildEmbers, buildLavaFalls, buildPlumes, buildShafts, type LavaFall } from './Layers';
 import { buildWildlife } from './Wildlife';
+import { ObstacleMap } from './Obstacles';
+
+/** Props an animal can brush through (plants, glows, flat cracks), so they don't block its path. */
+const SOFT_PROPS = /^(kelp|seagrass|sea-whips|sea-fans|anemones|glow-threads|siphonophores|ice-algae|leaves|lava-cracks|vent-glow|tube-worms)/;
 
 /** Depth bands (z ranges) relative to the gameplay plane at z = 0. */
 const BANDS = {
@@ -176,7 +180,7 @@ export class BiomeBuilder {
     if (this.quality.shafts) add(buildShafts(b, level, b.shafts));
     add(buildAmbientSchools(b, level, Math.max(1, Math.round(b.ambientSchools * (this.quality.propDensity < 0.6 ? 0.5 : 1)))));
     if (b.embers) add(buildEmbers(level, Math.round(b.embers * this.quality.particles), level.seed));
-    add(buildWildlife(b, level));
+    if (b.wildlife?.length) add(buildWildlife(b, level, this.obstacles()));
     const top = b.surface === 'none' ? level.world.height + 4 : level.world.height - 0.2;
     add(buildBubbleColumns(this.bubbleSources, Math.round(36 * this.quality.particles), top, level.seed));
     add(buildLavaFalls(this.lavaFalls, level.seed));
@@ -226,6 +230,16 @@ export class BiomeBuilder {
 
   private ground(x: number, z: number): number {
     return this.env.terrain.height(x, z);
+  }
+
+  /** The seabed and every solid prop placed so far, for the wildlife to steer around. */
+  private obstacles(): ObstacleMap {
+    const level = this.env.level;
+    const halfW = level.world.width / 2 + 45;
+    const surface = this.env.biome.surface === 'none' ? null : level.world.height;
+    const map = new ObstacleMap(-halfW, halfW, -66, 4, (x, z) => this.ground(x, z), surface);
+    for (const m of this.meshes) if (!SOFT_PROPS.test(m.name)) map.addInstances(m);
+    return map;
   }
 
   /** Moves a share of the placements onto rock outcrops so life grows up the reef. */
