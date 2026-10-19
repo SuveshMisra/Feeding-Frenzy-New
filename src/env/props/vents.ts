@@ -10,21 +10,25 @@ export interface Chimney {
   top: Vector3;
 }
 
-/** Hydrothermal chimney: stacked, lumpy mineral segments with a sulfur crust. */
-export function chimneyGeometry(seed: number): Chimney {
+/**
+ * Hydrothermal chimney: stacked, lumpy mineral segments with a sulfur crust. `tall`
+ * builds a black smoker spire of 10-14 segments that tapers slowly.
+ */
+export function chimneyGeometry(seed: number, tall = false): Chimney {
   const rng = new Rng(seed);
   const noise = createNoise3D(() => rng.next());
   const parts: BufferGeometry[] = [];
   let y = -0.4;
-  let r = rng.range(0.9, 1.3);
+  let r = tall ? rng.range(1.5, 2) : rng.range(0.9, 1.3);
   let x = 0;
   let z = 0;
-  const segs = rng.int(4, 6);
+  const segs = tall ? rng.int(10, 14) : rng.int(4, 6);
+  const taper: [number, number] = tall ? [0.86, 0.95] : [0.7, 0.88];
   const crust = new Color('#c9a24a');
   const rock = new Color('#1b1a1d');
   for (let k = 0; k < segs; k++) {
     const h = rng.range(0.8, 1.4);
-    const rTop = r * rng.range(0.7, 0.88);
+    const rTop = Math.max(0.35, r * rng.range(taper[0], taper[1]));
     const c = new CylinderGeometry(rTop, r * 1.05, h, 10, 3, false);
     const pos = c.getAttribute('position');
     const v = new Vector3();
@@ -38,7 +42,7 @@ export function chimneyGeometry(seed: number): Chimney {
     parts.push(c);
     y += h * 0.9;
     r = rTop;
-    x += rng.range(-0.15, 0.15);
+    x += rng.range(-0.15, 0.15) * (tall ? 1.6 : 1);
     z += rng.range(-0.1, 0.1);
   }
   const top = new Vector3(x, y, z);

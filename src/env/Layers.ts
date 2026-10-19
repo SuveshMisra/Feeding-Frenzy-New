@@ -13,6 +13,7 @@ import {
 } from 'three';
 import type { BiomeDef, LevelDef } from '../config/levels';
 import { shared, waterPrelude } from '../engine/materialPatches';
+import { clamp, smoothstep } from '../engine/math';
 import { Rng } from '../engine/rng';
 import type { EnvLayer } from './Environment';
 
@@ -181,6 +182,184 @@ export function buildPlumes(mouths: Vector3[], perVent: number, seed: number): E
   pts.name = 'vent-plumes';
   return {
     object: pts,
+    dispose: () => {
+      geo.dispose();
+      mat.dispose();
+    },
+  };
+}
+
+/** Streams of bubbles wobbling up from seabed sources (world space) to `top`. */
+export function buildBubbleColumns(sources: Vector3[], perColumn: number, top: number, seed: number): EnvLayer | null {
+  if (sources.length === 0 || perColumn <= 0) return null;
+  const rng = new Rng(seed + 53);
+  const n = sources.length * perColumn;
+  const src = new Float32Array(n * 4);
+  const rnd = new Float32Array(n * 3);
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const s = sources[Math.floor(i / perColumn)];
+    src.set([s.x, s.y, s.z, top - s.y], i * 4);
+    rnd.set([rng.next(), rng.next(), rng.next()], i * 3);
+    pos.set([s.x, s.y, s.z], i * 3);
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  geo.setAttribute('aSrc', new Float32BufferAttribute(src, 4));
+  geo.setAttribute('aRnd', new Float32BufferAttribute(rnd, 3));
+  const mat = new ShaderMaterial({
+    uniforms: { ...shared, uScale: { value: 600 } },
+    vertexShader: /* glsl */ `
+      uniform float uTime;
+      uniform float uScale;
+      uniform vec2 uCurrent;
+      attribute vec4 aSrc;
+      attribute vec3 aRnd;
+      varying float vAge;
+      varying vec3 vWorld;
+      void main() {
+        // Rise time scales with the column height so bubbles keep a steady speed.
+        float age = fract(uTime * (1.6 + aRnd.y * 1.2) / aSrc.w + aRnd.x);
+        vec3 p = aSrc.xyz;
+        p.y += age * aSrc.w;
+        float wob = 0.12 + age * 0.5;
+        p.x += sin(uTime * (3.0 + aRnd.z * 3.0) + aRnd.x * 40.0) * wob * 0.5 + uCurrent.x * age * 2.0 + (aRnd.z - 0.5) * 0.5;
+        p.z += cos(uTime * (2.5 + aRnd.y * 2.0) + aRnd.z * 30.0) * wob * 0.4;
+        vAge = age;
+        vWorld = p;
+        vec4 mv = viewMatrix * vec4(p, 1.0);
+        gl_Position = projectionMatrix * mv;
+        gl_PointSize = clamp((0.07 + aRnd.y * 0.14) * (1.0 + age * 0.8) * uScale / -mv.z, 1.0, 40.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      ${waterPrelude(false)}
+      varying float vAge;
+      varying vec3 vWorld;
+      void main() {
+        vec2 q = gl_PointCoord * 2.0 - 1.0;
+        float r = length(q);
+        if (r > 1.0) discard;
+        float rim = smoothstep(0.55, 0.92, r) * (1.0 - smoothstep(0.92, 1.0, r));
+        float glint = 1.0 - smoothstep(0.0, 0.28, length(q - vec2(-0.35, -0.35)));
+        float a = (rim * 0.65 + glint * 0.8 + 0.06) * smoothstep(0.0, 0.04, vAge) * (1.0 - smoothstep(0.85, 1.0, vAge));
+        a *= 1.0 - ffFogFactor(vWorld) * 0.8;
+        gl_FragColor = vec4(vec3(0.85, 0.95, 1.0) * 1.3, a);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+  });
+  const pts = new Points(geo, mat);
+  pts.frustumCulled = false;
+  pts.renderOrder = 3;
+  pts.name = 'bubble-columns';
+  return {
+    object: pts,
+    dispose: () => {
+      geo.dispose();
+      mat.dispose();
+    },
+  };
+}
+
+export interface LavaFall {
+  x: number;
+  /** Centre and footprint radius of the domed stack it pours down. */
+  z: number;
+  radius: number;
+  top: number;
+  bottom: number;
+  width: number;
+}
+
+/** Glowing lava pouring down cliff faces: ribbons with crust flowing down them. */
+export function buildLavaFalls(falls: LavaFall[], seed: number): EnvLayer | null {
+  if (falls.length === 0) return null;
+  const rng = new Rng(seed + 61);
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const index: number[] = [];
+  const rows = 28;
+  const cols = 4;
+  for (const f of falls) {
+    const start = pos.length / 3;
+    const ph = rng.range(0, 6.28);
+    for (let j = 0; j <= rows; j++) {
+      const v = j / rows;
+      const y = f.top + (f.bottom - f.top) * v;
+      // The stack is a dome (columns shorten towards the rim), so the lava runs out
+      // across the top, down the stepped front face, and spreads at the foot.
+      const d = clamp((v + 0.12) / 0.75, 0.15, 1);
+      const z = f.z + f.radius * (d + 0.22 + smoothstep(0.85, 1, v) * 0.3);
+      const w = f.width * (0.7 + v * 0.6 + Math.sin(v * 9 + ph) * 0.08);
+      const sway = Math.sin(v * 5 + ph) * 0.35;
+      for (let i = 0; i <= cols; i++) {
+        const u = i / cols;
+        pos.push(f.x + (u - 0.5) * w + sway, y, z);
+        uv.push(u, v);
+      }
+    }
+    for (let j = 0; j < rows; j++) {
+      for (let i = 0; i < cols; i++) {
+        const a = start + j * (cols + 1) + i;
+        const b = a + 1;
+        const c = a + cols + 1;
+        const d = c + 1;
+        index.push(a, c, b, b, c, d);
+      }
+    }
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new Float32BufferAttribute(uv, 2));
+  geo.setIndex(index);
+  const mat = new ShaderMaterial({
+    uniforms: { ...shared },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      varying vec3 vWorld;
+      void main() {
+        vUv = uv;
+        vWorld = position;
+        gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      ${waterPrelude(false)}
+      varying vec2 vUv;
+      varying vec3 vWorld;
+      float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vnoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
+      }
+      void main() {
+        vec2 flow = vec2(vUv.x * 4.0, vUv.y * 14.0 - uTime * 1.3);
+        float n = vnoise(flow) * 0.6 + vnoise(flow * 2.3 + 7.0) * 0.4;
+        float core = 1.0 - abs(vUv.x - 0.5) * 2.0;
+        float heat = clamp(core * 1.25 - 0.1, 0.0, 1.0) * (0.55 + n * 0.6);
+        float crust = smoothstep(0.38, 0.22, n) * (1.0 - core * 0.7);
+        vec3 col = mix(vec3(0.9, 0.12, 0.02), vec3(1.0, 0.62, 0.18), heat) * (2.2 + heat * 2.0);
+        col = mix(col, vec3(0.08, 0.03, 0.02), crust);
+        float edge = smoothstep(0.0, 0.18, core) * smoothstep(0.0, 0.04, vUv.y);
+        if (edge < 0.02) discard;
+        vec3 fogged = ffFog(col, vWorld);
+        gl_FragColor = vec4(mix(fogged, col * 0.7, 0.35), edge);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    side: DoubleSide,
+  });
+  const mesh = new Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 2;
+  mesh.name = 'lava-falls';
+  return {
+    object: mesh,
     dispose: () => {
       geo.dispose();
       mat.dispose();

@@ -1,4 +1,16 @@
-import { BufferGeometry, CircleGeometry, ConeGeometry, CylinderGeometry, IcosahedronGeometry, Quaternion, SphereGeometry, Vector3 } from 'three';
+import {
+  BufferGeometry,
+  CircleGeometry,
+  ConeGeometry,
+  CylinderGeometry,
+  IcosahedronGeometry,
+  LatheGeometry,
+  Quaternion,
+  SphereGeometry,
+  Vector2,
+  Vector3,
+} from 'three';
+import { createNoise3D } from 'simplex-noise';
 import { Rng } from '../../engine/rng';
 import { lerp, smoothstep, TAU } from '../../engine/math';
 import { mergeParts, paint } from './shapes';
@@ -45,6 +57,46 @@ export function crystalClusterGeometry(seed: number): BufferGeometry {
   }
   base.deleteAttribute('uv');
   return mergeParts(parts);
+}
+
+/**
+ * A flowstone column joining floor to ceiling: flared at both ends, pinched at a waist,
+ * with drip ridges running down it. Height is normalised to 0..1 (stretch it with the
+ * instance's y scale) while the radius is in world units, about 1.4 at the feet.
+ */
+export function cavePillarGeometry(seed: number): BufferGeometry {
+  const rng = new Rng(seed);
+  const noise = createNoise3D(() => rng.next());
+  const rBase = rng.range(1.2, 1.7);
+  const rTop = rng.range(1, 1.5);
+  const waistAt = rng.range(0.4, 0.62);
+  const waist = rng.range(0.3, 0.5);
+  const prof: Vector2[] = [];
+  const steps = 28;
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    let r = lerp(rBase, rTop, t);
+    r *= lerp(1, waist, Math.exp(-(((t - waistAt) / 0.22) ** 2)));
+    r *= 1 + Math.max(0, 0.1 - t) * 7 + Math.max(0, t - 0.9) * 7;
+    prof.push(new Vector2(r, t));
+  }
+  const geo = new LatheGeometry(prof, 16);
+  const pos = geo.getAttribute('position');
+  const v = new Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const a = Math.atan2(v.z, v.x);
+    const ridge = Math.sin(a * 7 + v.y * 3 + noise(v.x * 0.5, v.y * 4, v.z * 0.5) * 2) * 0.07;
+    const n = 1 + ridge + noise(v.x * 0.9, v.y * 9, v.z * 0.9) * 0.14;
+    pos.setXYZ(i, v.x * n, v.y, v.z * n);
+  }
+  geo.computeVertexNormals();
+  geo.deleteAttribute('uv');
+  return paint(geo, (x, y, z, c) => {
+    const a = Math.atan2(z, x);
+    const streak = 0.5 + 0.5 * Math.sin(a * 13 + noise(x, y * 6, z) * 3);
+    c.setScalar(lerp(0.55, 0.95, streak * 0.45 + smoothstep(0.1, 0.5, Math.abs(y - 0.5)) * 0.4));
+  });
 }
 
 /**

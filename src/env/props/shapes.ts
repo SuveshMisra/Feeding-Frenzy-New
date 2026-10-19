@@ -401,6 +401,64 @@ export function grassTuftGeometry(seed: number, blades: number, colors: PlantCol
   return mergeParts(parts);
 }
 
+export interface StrandOptions {
+  strands: number;
+  /** Strands are scattered over a disc this wide. */
+  spread: number;
+  length: readonly [number, number];
+  bead: readonly [number, number];
+  /** Spacing between beads along a strand. */
+  gap: number;
+  /** A bigger glowing float at the top of each strand (siphonophores). */
+  float?: boolean;
+  /** Bare thread continuing above y = 0, so the strand reaches into a ceiling. */
+  up?: number;
+}
+
+/**
+ * Glowing beads strung on thin threads hanging down from y = 0 (sway with a negative
+ * height). Threads are painted dark and beads bright, so a glow material lights only
+ * the beads.
+ */
+export function strandGeometry(seed: number, o: StrandOptions): BufferGeometry {
+  const rng = new Rng(seed);
+  const parts: BufferGeometry[] = [];
+  const up = o.up ?? 0;
+  for (let k = 0; k < o.strands; k++) {
+    const a = rng.range(0, TAU);
+    const d = Math.sqrt(rng.next()) * o.spread * 0.5;
+    const x = Math.cos(a) * d;
+    const z = Math.sin(a) * d;
+    const len = rng.range(o.length[0], o.length[1]);
+    const phase = rng.range(0, TAU);
+    const thread = new CylinderGeometry(0.012, 0.012, len + up, 3, Math.max(2, Math.round(len / 0.8)), true);
+    thread.translate(x, (up - len) / 2, z);
+    paint(thread, (_x, _y, _z, c) => c.setScalar(0.22));
+    parts.push(thread);
+    if (o.float) {
+      const bulb = new SphereGeometry(rng.range(0.14, 0.2), 8, 6);
+      bulb.scale(1, 1.5, 1);
+      paint(bulb, (_x, _y, _z, c) => c.setScalar(1.3));
+      bulb.translate(x, -0.15, z);
+      parts.push(bulb);
+    }
+    const beads = Math.floor((len - 0.2) / o.gap);
+    for (let b = 1; b <= beads; b++) {
+      const r = rng.range(o.bead[0], o.bead[1]) * (o.float ? lerp(1, 0.55, b / beads) : 1);
+      const bead = new IcosahedronGeometry(r, 0);
+      paint(bead, (_x, _y, _z, c) => c.setScalar(rng.range(1.05, 1.3)));
+      bead.translate(x, -b * o.gap - rng.range(0, o.gap * 0.3), z);
+      parts.push(bead);
+    }
+    for (const p of parts.slice(-beads - (o.float ? 2 : 1))) sway(p, () => [phase, 1]);
+  }
+  for (const p of parts) {
+    p.deleteAttribute('uv');
+    if (!p.getAttribute('aSway')) sway(p, () => [0, 1]);
+  }
+  return mergeParts(parts);
+}
+
 /** Faceted crystal chunk (ice shards, glassy rocks). */
 export function shardGeometry(seed: number): BufferGeometry {
   const rng = new Rng(seed);

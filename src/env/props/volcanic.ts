@@ -8,6 +8,8 @@ export interface Basalt {
   geo: BufferGeometry;
   /** Height of the tallest column (unit scale). */
   top: number;
+  /** Footprint radius (unit scale). Columns shorten roughly linearly towards it. */
+  radius: number;
 }
 
 /**
@@ -43,7 +45,7 @@ export function basaltGeometry(seed: number): Basalt {
       parts.push(col);
     }
   }
-  return { geo: mergeParts(parts), top };
+  return { geo: mergeParts(parts), top, radius: rings * r * 1.7 * 1.05 + r };
 }
 
 /**

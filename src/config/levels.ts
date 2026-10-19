@@ -49,8 +49,34 @@ export interface BiomeDef {
     crystals?: number;
     /** Basalt columns and lava cracks. */
     basalt?: number;
+    /** Coral bommies with tiers of table coral, rising into mid-water. */
+    towers?: number;
+    /** Clumps of swaying sea whips, many in the foreground. */
+    whips?: number;
+    /** Whale skeletons lying on the seabed. */
+    skeletons?: number;
+    /** Glowing siphonophore chains drifting in mid-water. */
+    strands?: number;
+    /** Tube worm clumps, mostly around the vents. */
+    tubeWorms?: number;
+    /** Icicles hanging from the ice sheet. */
+    brinicles?: number;
+    /** Ribbons of ice algae hanging from the ice sheet. */
+    curtains?: number;
+    /** Black smoker spires in the background (on top of `vents`). */
+    tallVents?: number;
+    /** Columns of bubbles rising from the seabed. */
+    bubbles?: number;
+    /** Lava pouring down basalt cliffs in the background. */
+    lavaFalls?: number;
+    /** Flowstone columns joining the cave floor to the ceiling. */
+    pillars?: number;
+    /** Clumps of glowing threads hanging from the cave ceiling. */
+    glowThreads?: number;
   };
   palette: { coral: string[]; rock: string; rockDark: string; plant: string; plantTip: string };
+  /** Big animals cruising across the background. */
+  wildlife?: { kind: CreatureKind; count: number }[];
   /** Glowing embers drifting up from the seabed. */
   embers?: number;
   ambientSchools: number;
@@ -59,6 +85,8 @@ export interface BiomeDef {
   /** Colour grade before tone mapping; anything left out uses GRADE_DEFAULT. */
   grade?: { contrast?: number; saturation?: number; shadowTint?: string };
 }
+
+export type CreatureKind = 'turtle' | 'manta' | 'whale' | 'seal';
 
 export const GRADE_DEFAULT = { contrast: 1.08, saturation: 1.15, shadowTint: '#c8dcff' };
 /** Dark enclosed biomes: almost everything sits in the shadows, so contrast and a cool tint would just crush them. */
@@ -194,6 +222,8 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       wreck: false,
       icebergs: 0,
       vents: 0,
+      towers: 12,
+      whips: 70,
     },
     palette: {
       coral: ['#ff6f91', '#ff9a5a', '#c56cf0', '#ffd166', '#ff5e7e', '#7cf2c8', '#ff8fd8'],
@@ -202,6 +232,10 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       plant: '#3f9b58',
       plantTip: '#9be27a',
     },
+    wildlife: [
+      { kind: 'turtle', count: 2 },
+      { kind: 'manta', count: 2 },
+    ],
     ambientSchools: 5,
     bloom: 0.75,
     exposure: 1.05,
@@ -314,6 +348,8 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       wreck: false,
       icebergs: 12,
       vents: 0,
+      brinicles: 34,
+      curtains: 36,
     },
     palette: {
       coral: ['#f3a6c8', '#ffd6e8', '#b9e6ff'],
@@ -322,6 +358,10 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       plant: '#6aa0b0',
       plantTip: '#d9f6ff',
     },
+    wildlife: [
+      { kind: 'whale', count: 1 },
+      { kind: 'seal', count: 3 },
+    ],
     ambientSchools: 4,
     bloom: 0.85,
     exposure: 1.02,
@@ -354,6 +394,9 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       wreck: false,
       icebergs: 0,
       vents: 8,
+      skeletons: 2,
+      strands: 28,
+      tubeWorms: 14,
     },
     palette: {
       coral: ['#ff6fb5', '#7af7ff', '#c08bff'],
@@ -522,6 +565,8 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       icebergs: 0,
       vents: 0,
       crystals: 70,
+      pillars: 16,
+      glowThreads: 34,
     },
     palette: {
       coral: ['#5ff2ff', '#ff5fd2', '#a77bff', '#7dffb0'],
@@ -565,6 +610,9 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       icebergs: 0,
       vents: 5,
       basalt: 36,
+      tallVents: 4,
+      bubbles: 10,
+      lavaFalls: 2,
     },
     palette: {
       coral: ['#ff7a3c', '#ffb050', '#c04a3a'],

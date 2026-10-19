@@ -1,4 +1,5 @@
 import {
+  CatmullRomCurve3,
   Color,
   DoubleSide,
   Euler,
@@ -15,7 +16,7 @@ import {
 import type { QualityPreset } from '../app/Quality';
 import { patchMaterial, type StoneOptions } from '../engine/materialPatches';
 import { Rng } from '../engine/rng';
-import { clamp, TAU } from '../engine/math';
+import { clamp, lerp, TAU } from '../engine/math';
 import { getSharedTextures } from '../art/textures';
 import type { Environment } from './Environment';
 import {
@@ -28,18 +29,34 @@ import {
   rockGeometry,
   shardGeometry,
   spongeGeometry,
+  strandGeometry,
   type CoralStyle,
   type PlantColors,
 } from './props/shapes';
-import { barrelGeometry, crateGeometry, shipwreckGeometry } from './props/wreck';
-import { icebergGeometry } from './props/ice';
+import {
+  anchorGeometry,
+  barrelGeometry,
+  buoyGeometry,
+  cannonballPileGeometry,
+  cannonGeometry,
+  chainLinkGeometry,
+  crateGeometry,
+  hangingClothGeometry,
+  rowboatGeometry,
+  shipwreckGeometry,
+  standingMastGeometry,
+} from './props/wreck';
+import { algaeCurtainGeometry, brinicleGeometry, icebergGeometry } from './props/ice';
 import { chimneyGeometry } from './props/vents';
 import { leafGeometry, mangroveGeometry } from './props/mangrove';
 import { cliffGeometry } from './props/canyon';
 import { archGeometry, blockGeometry, columnGeometry, statueHeadGeometry, stepsGeometry } from './props/ruins';
-import { crystalClusterGeometry, mushroomGeometry } from './props/crystal';
+import { cavePillarGeometry, crystalClusterGeometry, mushroomGeometry } from './props/crystal';
 import { basaltGeometry, lavaCrackGeometry } from './props/volcanic';
-import { buildAmbientSchools, buildEmbers, buildPlumes, buildShafts } from './Layers';
+import { coralTowerGeometry, seaWhipGeometry, type LocalPerch } from './props/reef';
+import { tubeWormGeometry, whaleSkeletonGeometry } from './props/abyss';
+import { buildAmbientSchools, buildBubbleColumns, buildEmbers, buildLavaFalls, buildPlumes, buildShafts, type LavaFall } from './Layers';
+import { buildWildlife } from './Wildlife';
 
 /** Depth bands (z ranges) relative to the gameplay plane at z = 0. */
 const BANDS = {
@@ -101,6 +118,11 @@ export class BiomeBuilder {
   private readonly meshes: InstancedMesh[] = [];
   private readonly perches: Perch[] = [];
   private readonly glowPoints: GlowPoint[] = [];
+  private readonly ventBases: { x: number; z: number; s: number }[] = [];
+  private readonly bubbleSources: Vector3[] = [];
+  private readonly lavaFalls: LavaFall[] = [];
+  /** Footprints (centre and half extents) that scattered props must not land in. */
+  private readonly clearings: { x: number; z: number; rx: number; rz: number }[] = [];
   private readonly xMin: number;
   private readonly xMax: number;
   private readonly caustics: boolean;
@@ -119,11 +141,15 @@ export class BiomeBuilder {
     const b = this.env.biome;
     const P = b.props;
     const detail = this.quality.level === 'low' ? 2 : this.quality.level === 'ultra' ? 4 : 3;
+    // Set pieces go down first and keep their footprint clear so they stay readable.
+    if (P.skeletons) this.skeletons(P.skeletons);
+    if (P.basalt) this.basalt(P.basalt, P.lavaFalls ?? 0);
     if (P.rocks) this.rocks(P.rocks, detail);
     // Structures first: their tops become perches for the life that follows.
+    if (P.towers) this.towers(P.towers);
+    if (P.pillars) this.pillars(P.pillars);
     if (P.cliffs) this.cliffs(P.cliffs);
     if (P.ruins) this.ruins(P.ruins);
-    if (P.basalt) this.basalt(P.basalt);
     if (P.mangrove) this.mangroves(P.mangrove);
     if (P.crystals) this.crystals(P.crystals);
     if (P.coral) this.corals(P.coral);
@@ -133,9 +159,15 @@ export class BiomeBuilder {
     if (P.anemones) this.anemones(P.anemones);
     if (P.kelp) this.kelp(P.kelp);
     if (P.seagrass) this.seagrass(P.seagrass);
+    if (P.whips) this.whips(P.whips);
     if (P.wreck) this.wreck();
-    if (P.icebergs) this.ice(P.icebergs);
-    if (P.vents) this.vents(P.vents);
+    if (P.icebergs) this.ice(P.icebergs, P.brinicles ?? 0);
+    if (P.curtains) this.curtains(P.curtains);
+    if (P.vents || P.tallVents) this.vents(P.vents, P.tallVents ?? 0);
+    if (P.tubeWorms) this.tubeWorms(P.tubeWorms);
+    if (P.strands) this.strands(P.strands);
+    if (P.glowThreads) this.glowThreads(P.glowThreads);
+    if (P.bubbles) this.bubbles(P.bubbles);
 
     const level = this.env.level;
     const add = (l: ReturnType<typeof buildShafts>): void => {
@@ -144,6 +176,10 @@ export class BiomeBuilder {
     if (this.quality.shafts) add(buildShafts(b, level, b.shafts));
     add(buildAmbientSchools(b, level, Math.max(1, Math.round(b.ambientSchools * (this.quality.propDensity < 0.6 ? 0.5 : 1)))));
     if (b.embers) add(buildEmbers(level, Math.round(b.embers * this.quality.particles), level.seed));
+    add(buildWildlife(b, level));
+    const top = b.surface === 'none' ? level.world.height + 4 : level.world.height - 0.2;
+    add(buildBubbleColumns(this.bubbleSources, Math.round(36 * this.quality.particles), top, level.seed));
+    add(buildLavaFalls(this.lavaFalls, level.seed));
     if (this.glowPoints.length) this.followLights();
 
     const meshes = this.meshes;
@@ -184,7 +220,8 @@ export class BiomeBuilder {
         out.push({ x: rng.range(this.xMin, this.xMax), z: rng.range(BANDS[band][0], BANDS[band][1]), band });
       }
     }
-    return out;
+    if (this.clearings.length === 0) return out;
+    return out.filter((s) => !this.clearings.some((c) => Math.abs(s.x - c.x) < c.rx && Math.abs(s.z - c.z) < c.rz));
   }
 
   private ground(x: number, z: number): number {
@@ -205,6 +242,22 @@ export class BiomeBuilder {
       it.s *= p.z < -11 ? 1.3 : 1;
     }
     return items;
+  }
+
+  /** The instance transform of a placement (same as `add` uses). */
+  private matrix(p: Placement): Matrix4 {
+    tmpE.set(p.tx ?? 0, p.ry, p.tz ?? 0);
+    tmpQ.setFromEuler(tmpE);
+    return new Matrix4().compose(new Vector3(p.x, p.y, p.z), tmpQ, new Vector3(p.s * (p.sx ?? 1), p.s * (p.sy ?? 1), p.s * (p.sz ?? 1)));
+  }
+
+  /** Adds a placed structure's local perches. */
+  private addPerches(local: LocalPerch[], p: Placement): void {
+    const m = this.matrix(p);
+    for (const lp of local) {
+      const w = new Vector3(lp.x, lp.y, lp.z).applyMatrix4(m);
+      this.perches.push({ x: w.x, y: w.y, z: w.z, r: lp.r * p.s });
+    }
   }
 
   private add(geo: BufferGeometry, mat: Material, items: Placement[], name: string, shadow = false): InstancedMesh | null {
@@ -347,6 +400,186 @@ export class BiomeBuilder {
       });
     }
     this.addVariants(geos, mat, items, 'rocks', true);
+  }
+
+  private towers(count: number): void {
+    const pal = this.env.biome.palette;
+    const seed = this.env.level.seed;
+    const rng = this.rng;
+    const variants = [coralTowerGeometry(seed + 200), coralTowerGeometry(seed + 201), coralTowerGeometry(seed + 202)];
+    const mat = this.material({ map: getSharedTextures().grain, roughness: 0.8 }, { translucency: 0.12 });
+    const groups: Placement[][] = variants.map(() => []);
+    const muted = new Color('#c9a88a');
+    this.spots(this.n(count), { mid: 3, back: 4 }).forEach((s, i) => {
+      // Keep the big ones well behind the play plane.
+      const z = s.band === 'mid' ? Math.min(s.z, -4.5) : s.z;
+      const v = i % variants.length;
+      const p: Placement = {
+        x: s.x,
+        z,
+        y: this.ground(s.x, z) - 0.2,
+        s: s.band === 'back' ? rng.range(1.3, 2) : rng.range(0.8, 1.15),
+        ry: rng.range(0, TAU),
+        color: this.tint(rng.pick(pal.coral)).lerp(muted, 0.35),
+      };
+      groups[v].push(p);
+      this.addPerches(variants[v].perches, p);
+    });
+    variants.forEach((v, i) => this.add(v.geo, mat, groups[i], `coral-towers-${i}`, true));
+  }
+
+  private whips(count: number): void {
+    const pal = this.env.biome.palette;
+    const seed = this.env.level.seed;
+    const geos = [seaWhipGeometry(seed + 210), seaWhipGeometry(seed + 211), seaWhipGeometry(seed + 212)];
+    const mat = this.material({ roughness: 0.55 }, { translucency: 0.3, sway: { freq: 0.9, amount: 0.5, height: 4.5 } });
+    const items = this.spots(this.n(count), { front: 2.4, mid: 2, back: 0.6 }, 3, 2.5).map((s) => ({
+      x: s.x,
+      z: s.z,
+      y: this.ground(s.x, s.z) - 0.05,
+      s: s.band === 'front' ? this.rng.range(1.2, 2) : this.scaleFor(s.band, 0.8, 1.3),
+      ry: this.rng.range(0, TAU),
+      color: this.tint(this.rng.pick(pal.coral), 0.15),
+    }));
+    this.addVariants(geos, mat, this.settle(items, 0.12), 'sea-whips');
+  }
+
+  private skeletons(count: number): void {
+    const rng = this.rng;
+    const W = this.env.level.world.width;
+    const geo = whaleSkeletonGeometry(this.env.level.seed + 220);
+    const mat = this.material({ roughness: 0.75 }, { rim: { color: new Color('#7fb8ff'), power: 2.6, strength: 0.35 } });
+    const items: Placement[] = [];
+    for (let i = 0; i < count; i++) {
+      const back = i % 2 === 1;
+      const x = lerp(-W * 0.35, W * 0.35, (i + rng.range(0.3, 0.7)) / count);
+      const z = back ? rng.range(-26, -18) : rng.range(-8, -6.5);
+      const s = back ? rng.range(1.2, 1.5) : rng.range(0.75, 0.9);
+      items.push({
+        x,
+        z,
+        y: this.ground(x, z) - 0.25 * s,
+        s,
+        ry: rng.range(-0.25, 0.25) + (rng.chance(0.5) ? Math.PI : 0),
+        tz: rng.range(-0.04, 0.04),
+        color: this.tint('#d8d0bc', 0.08),
+      });
+      this.clearings.push({ x, z, rx: 10 * s, rz: 3.2 * s });
+    }
+    this.add(geo, mat, items, 'whale-skeletons', true);
+  }
+
+  private tubeWorms(count: number): void {
+    const rng = this.rng;
+    const seed = this.env.level.seed;
+    const geos = [tubeWormGeometry(seed + 230), tubeWormGeometry(seed + 231)];
+    const mat = this.material({ roughness: 0.55 }, { translucency: 0.15, sway: { freq: 1.1, amount: 0.08, height: 1.8 } });
+    const items: Placement[] = [];
+    for (let i = 0; i < this.n(count); i++) {
+      let x: number;
+      let z: number;
+      const vent = this.ventBases.length && rng.chance(0.75) ? rng.pick(this.ventBases) : null;
+      if (vent) {
+        const a = rng.range(0, TAU);
+        const d = rng.range(1.4, 3.2) * vent.s;
+        x = vent.x + Math.cos(a) * d;
+        z = Math.min(vent.z + Math.sin(a) * d * 0.6, -1.8);
+      } else {
+        const s = this.spots(1, { mid: 3, floor: 1, back: 1 })[0];
+        x = s.x;
+        z = s.z;
+      }
+      items.push({ x, z, y: this.ground(x, z) - 0.05, s: rng.range(0.7, 1.3) * (z < -11 ? 1.4 : 1), ry: rng.range(0, TAU), color: this.grey(0.85, 1) });
+    }
+    this.addVariants(geos, mat, items, 'tube-worms', true);
+  }
+
+  private strands(count: number): void {
+    const pal = this.env.biome.palette;
+    const seed = this.env.level.seed;
+    const H = this.env.level.world.height;
+    const rng = this.rng;
+    const geos = [6, 9, 12].map((len, i) => strandGeometry(seed + 240 + i, { strands: 1, spread: 0, length: [len * 0.8, len], bead: [0.06, 0.11], gap: 0.32, float: true }));
+    const mat = this.material({ roughness: 0.4 }, { glow: 1.8, translucency: 0.3, sway: { freq: 0.35, amount: 0.9, height: -11 } });
+    const items = this.spots(this.n(count), { mid: 3, back: 3, front: 0.4 }).map((s) => ({
+      x: s.x,
+      z: s.z,
+      y: H * rng.range(0.55, 1.05),
+      s: this.scaleFor(s.band, 0.8, 1.2),
+      ry: rng.range(0, TAU),
+      tz: rng.range(-0.25, 0.25),
+      color: this.tint(rng.pick(pal.coral), 0.1),
+    }));
+    this.addVariants(geos, mat, items, 'siphonophores');
+  }
+
+  private glowThreads(count: number): void {
+    const pal = this.env.biome.palette;
+    const seed = this.env.level.seed;
+    const H = this.env.level.world.height;
+    const rng = this.rng;
+    const geos = [0, 1, 2].map((i) => strandGeometry(seed + 250 + i, { strands: 12, spread: 1.8, length: [1.2, 5], bead: [0.025, 0.05], gap: 0.3, up: 2.5 }));
+    const mat = this.material({ roughness: 0.4 }, { glow: 2.2, sway: { freq: 0.3, amount: 0.22, height: -5 } });
+    const colors = ['#6ff7e8', '#8ffff0', pal.plantTip];
+    // The ceiling sags out of reach beyond z = -22.
+    const items = this.spots(this.n(count), { mid: 3, back: 2, front: 0.5 }).map((s) => ({
+      x: s.x,
+      z: Math.max(s.z, -21),
+      y: H + 0.9,
+      s: this.scaleFor(s.band, 0.8, 1.3),
+      ry: rng.range(0, TAU),
+      color: this.tint(rng.pick(colors), 0.08),
+    }));
+    this.addVariants(geos, mat, items, 'glow-threads');
+  }
+
+  private pillars(count: number): void {
+    const seed = this.env.level.seed;
+    const pal = this.env.biome.palette;
+    const H = this.env.level.world.height;
+    const rng = this.rng;
+    const variants = [cavePillarGeometry(seed + 260), cavePillarGeometry(seed + 261), cavePillarGeometry(seed + 262)];
+    const mat = this.material({ roughness: 0.6 }, { stone: { scale: 0.3, relief: 0.9 } });
+    const groups: Placement[][] = variants.map(() => []);
+    const pale = new Color('#6a6488');
+    const n = this.n(count);
+    for (let i = 0; i < n; i++) {
+      const front = i % 8 === 7;
+      const back = !front && rng.chance(0.45);
+      const x = this.xMin + ((i + rng.range(0.2, 0.8)) / n) * (this.xMax - this.xMin);
+      const z = front ? rng.range(5, 8) : back ? rng.range(-22, -12) : rng.range(-10, -3.5);
+      const s = back ? rng.range(1.2, 1.7) : front ? rng.range(0.8, 1) : rng.range(0.8, 1.15);
+      const g = this.ground(x, z);
+      // Reach well into the ceiling so its lumps never leave a gap.
+      const span = H + 3 - g + 0.3;
+      groups[i % variants.length].push({ x, z, y: g - 0.3, s, sy: span / s, ry: rng.range(0, TAU), color: this.tint(pal.rock, 0.12).lerp(pale, 0.3) });
+      this.perches.push({ x, z, y: g + 0.35, r: 1.5 * s });
+    }
+    variants.forEach((v, i) => this.add(v, mat, groups[i], `cave-pillars-${i}`, true));
+  }
+
+  private bubbles(count: number): void {
+    for (const s of this.spots(this.n(count), { mid: 3, front: 0.6, back: 1.5 })) {
+      this.bubbleSources.push(new Vector3(s.x, this.ground(s.x, s.z), s.z));
+    }
+  }
+
+  private curtains(count: number): void {
+    const seed = this.env.level.seed;
+    const H = this.env.level.world.height;
+    const base = new Color('#5f5a22');
+    const tip = new Color('#c9b552');
+    const geos = [algaeCurtainGeometry(seed + 280, base, tip), algaeCurtainGeometry(seed + 281, base, tip)];
+    const mat = this.material({ side: DoubleSide, roughness: 0.8 }, { translucency: 0.5, sway: { freq: 0.55, amount: 0.6, height: -4.5 } });
+    const items = this.spots(this.n(count), { mid: 3, back: 3, front: 0.6 }, 3, 4).map((s) => ({
+      x: s.x,
+      z: s.z,
+      y: H + 0.05,
+      s: this.scaleFor(s.band, 0.8, 1.4),
+      ry: this.rng.range(-0.5, 0.5),
+      color: this.grey(0.8, 1.1),
+    }));
+    this.addVariants(geos, mat, items, 'ice-algae');
   }
 
   private corals(count: number): void {
@@ -532,9 +765,140 @@ export class BiomeBuilder {
     });
     this.add(barrelGeometry(), mat, barrels, 'barrels', true);
     this.add(crateGeometry(), mat, crates, 'crates', true);
+    for (const off of [-6, 1.5, 7]) {
+      const x = main.x + off;
+      this.bubbleSources.push(new Vector3(x, this.ground(x, main.z) + 3, main.z + 1.5));
+    }
+    this.masts(mat);
+    this.moorings();
+    this.cannons(mat);
   }
 
-  private ice(count: number): void {
+  /** Lone masts standing out of the silt, one hung with a torn sail and one with a net. */
+  private masts(wood: Material): void {
+    const seed = this.env.level.seed;
+    const W = this.env.level.world.width;
+    const rng = this.rng;
+    const sailMat = this.material({ side: DoubleSide, roughness: 0.95 }, { translucency: 0.35, sway: { freq: 0.45, amount: 0.55, height: -5 } });
+    const netMat = this.material(
+      { map: getSharedTextures().net, alphaTest: 0.4, side: DoubleSide, roughness: 0.9 },
+      { sway: { freq: 0.5, amount: 0.4, height: -4 } },
+    );
+    const spots = [
+      { x: W * 0.2, z: -6.5, s: 1 },
+      { x: -W * 0.34, z: -19, s: 1.3 },
+    ];
+    spots.forEach((m, i) => {
+      const mast = standingMastGeometry(seed + 300 + i);
+      const p: Placement = {
+        x: m.x,
+        z: m.z,
+        y: this.ground(m.x, m.z) - 0.2,
+        s: m.s,
+        ry: rng.range(-0.5, 0.5),
+        tx: rng.range(-0.08, 0.08),
+        tz: rng.range(-0.16, 0.16),
+        color: this.grey(0.75, 0.95),
+      };
+      this.add(mast.geo, wood, [p], `mast-${i}`, true);
+      const mtx = this.matrix(p);
+      const hangFrom = (y: number): Placement => {
+        const at = new Vector3(0, y - 0.1, 0.14).applyMatrix4(mtx);
+        return { x: at.x, y: at.y, z: at.z, s: p.s, ry: p.ry, tx: p.tx, tz: p.tz };
+      };
+      const [low, high] = mast.yards;
+      const sail = hangingClothGeometry(seed + 310 + i, low.half * 1.85, rng.range(4.5, 6), 0.45);
+      this.add(sail, sailMat, [{ ...hangFrom(low.y), color: this.tint('#b9ae8e', 0.1) }], `sail-${i}`);
+      const net = hangingClothGeometry(seed + 320 + i, high.half * 1.8, rng.range(3, 4.5), 0.25);
+      this.add(net, netMat, [{ ...hangFrom(high.y), color: this.tint('#7a6a48', 0.1) }], `net-${i}`);
+    });
+  }
+
+  /** Anchors on the seabed, each chained up to a buoy floating at the surface. */
+  private moorings(): void {
+    const W = this.env.level.world.width;
+    const H = this.env.level.world.height;
+    const rng = this.rng;
+    const iron = this.material({ roughness: 0.6, metalness: 0.3 }, {});
+    const anchor = anchorGeometry();
+    const links: Placement[] = [];
+    const anchors: Placement[] = [];
+    const buoys: Placement[] = [];
+    const xAxis = new Vector3(1, 0, 0);
+    const roll = new Quaternion().setFromAxisAngle(xAxis, Math.PI / 2);
+    const q = new Quaternion();
+    const e = new Euler();
+    for (const c of [
+      { x: -W * 0.3, z: -4.5 },
+      { x: W * 0.05, z: -8 },
+      { x: W * 0.38, z: -5 },
+      { x: -W * 0.05, z: -24 },
+    ]) {
+      const x = c.x + rng.range(-5, 5);
+      const ap: Placement = {
+        x,
+        z: c.z,
+        y: this.ground(x, c.z) + 0.15,
+        s: 1,
+        ry: rng.range(0, TAU),
+        tz: rng.sign() * rng.range(1.2, 1.4),
+        color: this.tint('#6a5446', 0.12),
+      };
+      anchors.push(ap);
+      const ring = anchor.ring.clone().applyMatrix4(this.matrix(ap));
+      const buoy = new Vector3(x + rng.range(-5, 5), H - 0.35, c.z + rng.range(-1, 1));
+      buoys.push({ x: buoy.x, y: buoy.y, z: buoy.z, s: 1, ry: rng.range(0, TAU), color: this.grey(0.8, 1) });
+      const top = buoy.clone().setY(buoy.y - 0.85);
+      // Slack chain, pushed sideways by the current.
+      const bow = rng.range(1.5, 3) * rng.sign();
+      const mid = (t: number): Vector3 => top.clone().lerp(ring, t).add(new Vector3(Math.sin(t * Math.PI) * bow, 0, 0));
+      const curve = new CatmullRomCurve3([top, mid(0.33), mid(0.66), ring]);
+      const count = Math.floor(curve.getLength() / 0.36);
+      for (let k = 0; k <= count; k++) {
+        const t = k / count;
+        const p = curve.getPointAt(t);
+        q.setFromUnitVectors(xAxis, curve.getTangentAt(t));
+        if (k % 2) q.multiply(roll);
+        e.setFromQuaternion(q);
+        links.push({ x: p.x, y: p.y, z: p.z, s: 1, tx: e.x, ry: e.y, tz: e.z, color: this.tint('#5a4c44', 0.12) });
+      }
+    }
+    this.add(chainLinkGeometry(), iron, links, 'chains', true);
+    this.add(anchor.geo, iron, anchors, 'anchors', true);
+    this.add(buoyGeometry(), this.material({ roughness: 0.55 }, {}), buoys, 'buoys');
+  }
+
+  /** Rowing boats, cannons and cannonball piles scattered across the seabed. */
+  private cannons(wood: Material): void {
+    const seed = this.env.level.seed;
+    const rng = this.rng;
+    const iron = this.material({ roughness: 0.65, metalness: 0.25 }, { stone: { relief: 0.4 } });
+    const boats = this.spots(this.n(3), { mid: 3, back: 1 }).map((s) => {
+      const z = Math.min(s.z, -3.5);
+      const capsized = rng.chance(0.5);
+      return {
+        x: s.x,
+        z,
+        y: this.ground(s.x, z) + (capsized ? 0.55 : 0.35),
+        s: this.scaleFor(s.band, 0.9, 1.1),
+        ry: rng.range(0, TAU),
+        tx: capsized ? Math.PI * rng.range(0.85, 0.95) : rng.range(0.4, 0.9) * rng.sign(),
+        tz: rng.range(-0.15, 0.15),
+        color: this.grey(0.7, 0.95),
+      };
+    });
+    this.add(rowboatGeometry(seed + 330), wood, boats, 'rowboats', true);
+    const rust = (): Color => this.tint('#5a4a40', 0.15);
+    const guns = this.spots(this.n(9), { mid: 3, floor: 1.2, front: 0.5 }, 2, 3).map((s) => {
+      const sc = s.band === 'floor' ? rng.range(0.7, 0.85) : rng.range(0.85, 1.1);
+      return { x: s.x, z: s.z, y: this.ground(s.x, s.z) + 0.2 * sc, s: sc, ry: rng.range(0, TAU), tx: rng.range(-0.3, 0.3), tz: rng.range(-0.06, 0.15), color: rust() };
+    });
+    this.add(cannonGeometry(), iron, guns, 'cannons', true);
+    const piles = this.spots(this.n(6), { mid: 3, floor: 1 }).map((s) => ({ x: s.x, z: s.z, y: this.ground(s.x, s.z) - 0.06, s: rng.range(0.9, 1.2), ry: rng.range(0, TAU), color: rust() }));
+    this.add(cannonballPileGeometry(seed + 340), iron, piles, 'cannonballs', true);
+  }
+
+  private ice(count: number, brinicles: number): void {
     const seed = this.env.level.seed;
     const H = this.env.level.world.height;
     const bergMat = this.material(
@@ -580,15 +944,31 @@ export class BiomeBuilder {
       };
     });
     this.addVariants([shardGeometry(seed + 110), shardGeometry(seed + 111), shardGeometry(seed + 112)], mat, shards, 'ice-shards', true);
+
+    const icicles = this.spots(this.n(brinicles), { mid: 3, back: 3, front: 0.3 }).map((s) => ({
+      x: s.x,
+      z: s.band === 'mid' ? Math.min(s.z, -2.5) : s.z,
+      y: H + 0.15,
+      s: s.band === 'front' ? this.rng.range(0.4, 0.6) : s.band === 'back' ? this.rng.range(1.3, 2.2) : this.rng.range(0.7, 1.3),
+      ry: this.rng.range(0, TAU),
+      color: this.grey(0.9, 1.1),
+    }));
+    this.addVariants([brinicleGeometry(seed + 270), brinicleGeometry(seed + 271), brinicleGeometry(seed + 272)], mat, icicles, 'brinicles');
   }
 
-  private vents(count: number): void {
+  private vents(count: number, tall: number): void {
     const seed = this.env.level.seed;
     const chimneys = [chimneyGeometry(seed + 120), chimneyGeometry(seed + 121), chimneyGeometry(seed + 122)];
+    const spires = tall ? [chimneyGeometry(seed + 125, true), chimneyGeometry(seed + 126, true)] : [];
     const mat = this.material({ roughness: 0.9 }, { stone: { relief: 1.3 } });
     const groups: Placement[][] = chimneys.map(() => []);
-    const mouths: Vector3[] = [];
+    const spireGroups: Placement[][] = spires.map(() => []);
+    const mouths: { p: Vector3; s: number; lit: boolean }[] = [];
     const W = this.env.level.world.width;
+    const mouthOf = (top: Vector3, p: Placement): Vector3 => {
+      tmpE.set(0, p.ry, 0);
+      return top.clone().applyEuler(tmpE).multiplyScalar(p.s).add(new Vector3(p.x, p.y, p.z));
+    };
     for (let i = 0; i < count; i++) {
       const back = i % 3 === 2;
       const x = -W / 2 + ((i + this.rng.range(0.25, 0.75)) / count) * W;
@@ -597,21 +977,36 @@ export class BiomeBuilder {
       const v = i % chimneys.length;
       const p: Placement = { x, z, y: this.ground(x, z) - 0.2, s, ry: this.rng.range(0, TAU), color: this.grey(0.85, 1.1) };
       groups[v].push(p);
-      const top = chimneys[v].top.clone();
-      tmpE.set(0, p.ry, 0);
-      top.applyEuler(tmpE).multiplyScalar(s).add(new Vector3(p.x, p.y, p.z));
-      mouths.push(top);
+      this.ventBases.push({ x, z, s });
+      mouths.push({ p: mouthOf(chimneys[v].top, p), s: 0.55, lit: true });
+    }
+    // Black smoker spires towering over the back of the field.
+    for (let i = 0; i < tall; i++) {
+      const x = -W / 2 + ((i + this.rng.range(0.2, 0.8)) / tall) * W;
+      const z = this.rng.range(-28, -15);
+      const s = this.rng.range(1.2, 1.7);
+      const v = i % spires.length;
+      const p: Placement = { x, z, y: this.ground(x, z) - 0.3, s, ry: this.rng.range(0, TAU), color: this.grey(0.8, 1) };
+      spireGroups[v].push(p);
+      mouths.push({ p: mouthOf(spires[v].top, p), s: 0.45 * s, lit: false });
     }
     chimneys.forEach((c, i) => this.add(c.geo, mat, groups[i], `vent-${i}`, true));
+    spires.forEach((c, i) => this.add(c.geo, mat, spireGroups[i], `vent-spire-${i}`, true));
 
     // Glowing mouths and rising plumes.
     const capMat = new MeshBasicMaterial({ color: new Color('#ffb04d').multiplyScalar(3.2), toneMapped: false });
-    const caps = mouths.map((m) => ({ x: m.x, y: m.y + 0.05, z: m.z, s: 0.55, sy: 0.35, ry: 0 }));
+    const caps = mouths.map((m) => ({ x: m.p.x, y: m.p.y + 0.05, z: m.p.z, s: m.s, sy: 0.35, ry: 0 }));
     this.add(new SphereGeometry(1, 14, 8), capMat, caps, 'vent-glow');
-    const plumes = buildPlumes(mouths, Math.round(90 * this.quality.particles), seed);
+    const plumes = buildPlumes(
+      mouths.map((m) => m.p),
+      Math.round(90 * this.quality.particles),
+      seed,
+    );
     this.env.addLayer(plumes);
     const orange = new Color('#ff9a3c');
-    for (const m of mouths) this.glowPoints.push({ p: new Vector3(m.x, m.y + 1.2, m.z + 1.5), color: orange, power: 38, distance: 18, flicker: 0.15 });
+    for (const m of mouths) {
+      if (m.lit) this.glowPoints.push({ p: new Vector3(m.p.x, m.p.y + 1.2, m.p.z + 1.5), color: orange, power: 38, distance: 18, flicker: 0.15 });
+    }
   }
 
   /** The environment's few glow lights follow the glowing spots nearest to the camera. */
@@ -819,12 +1214,37 @@ export class BiomeBuilder {
     this.addVariants([mushroomGeometry(seed + 170), mushroomGeometry(seed + 171)], mushMat, this.settle(mush, 0.35), 'mushrooms');
   }
 
-  private basalt(count: number): void {
+  private basalt(count: number, falls: number): void {
     const seed = this.env.level.seed;
     const rng = this.rng;
     const variants = [basaltGeometry(seed + 180), basaltGeometry(seed + 181), basaltGeometry(seed + 182)];
     const mat = this.material({ roughness: 0.75 }, { stone: { relief: 1.2 } });
     const groups: Placement[][] = variants.map(() => []);
+
+    // Lava falls: a towering stack of columns with lava pouring off the top and
+    // spreading into cracks at its foot. Placed first so the view of them stays clear.
+    const pools: { x: number; z: number }[] = [];
+    const W = this.env.level.world.width;
+    for (let i = 0; i < falls; i++) {
+      const x = lerp(-W * 0.3, W * 0.3, falls === 1 ? 0.5 : i / (falls - 1)) + rng.range(-8, 8);
+      const z = rng.range(-26, -20);
+      const g = this.ground(x, z);
+      const s = rng.range(2, 2.4);
+      const sy = rng.range(2.6, 3.2);
+      const v = i % variants.length;
+      const color = (): Color => this.tint('#3a3432', 0.1);
+      groups[v].push({ x, z, y: g - 0.1, s, sy, ry: rng.range(0, TAU), color: color() });
+      groups[(v + 1) % 3].push({ x: x - 2 * s, z: z - 0.8, y: g - 0.1, s: s * 0.85, sy: sy * 0.7, ry: rng.range(0, TAU), color: color() });
+      groups[(v + 2) % 3].push({ x: x + 1.9 * s, z: z - 0.5, y: g - 0.1, s: s * 0.8, sy: sy * 0.55, ry: rng.range(0, TAU), color: color() });
+      const radius = variants[v].radius * s;
+      const foot = this.ground(x, z + radius * 1.5) - 0.15;
+      this.lavaFalls.push({ x, z, radius, top: g + (variants[v].top - 0.2) * s * sy - 0.4, bottom: foot, width: rng.range(1.1, 1.7) });
+      pools.push({ x, z: z + radius * 1.4 });
+      const near = z + radius * 1.5 + 8;
+      const far = z - radius * 0.5;
+      this.clearings.push({ x, z: (near + far) / 2, rx: 3.5, rz: (near - far) / 2 });
+    }
+
     this.spots(this.n(count), { mid: 3, back: 3, front: 0.4 }, 2, 6).forEach((s, i) => {
       const sc = this.scaleFor(s.band, 0.7, 1.4) * (s.band === 'back' ? 1.3 : 1);
       groups[i % variants.length].push({ x: s.x, z: s.z, y: this.ground(s.x, s.z) - 0.1, s: sc, sy: rng.range(0.8, 1.3), ry: rng.range(0, TAU), color: this.tint('#4a4240', 0.18) });
@@ -833,6 +1253,7 @@ export class BiomeBuilder {
 
     // Glowing lava cracks across the seabed, including right under the play plane.
     const centres = this.spots(this.n(Math.round(count * 0.8)), { mid: 3, floor: 2.5, back: 2 }).map((s) => ({ x: s.x, z: s.z }));
+    centres.push(...pools);
     const lavaMat = this.material(
       { roughness: 0.5, side: DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 },
       { glow: 1.5 },

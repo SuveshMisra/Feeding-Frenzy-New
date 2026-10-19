@@ -329,6 +329,42 @@ export function makeFanTexture(): Texture {
   return t;
 }
 
+/** Knotted diamond mesh with alpha, for fishing nets. Tiles. */
+export function makeNetTexture(): Texture {
+  const size = 256;
+  const [canvas, ctx] = makeCanvas(size, size);
+  const rng = new Rng(311);
+  ctx.clearRect(0, 0, size, size);
+  ctx.strokeStyle = '#ffffff';
+  ctx.fillStyle = '#ffffff';
+  ctx.lineCap = 'round';
+  const cells = 6;
+  const step = size / cells;
+  for (let i = -1; i <= cells + 1; i++) {
+    for (const dir of [1, -1]) {
+      ctx.lineWidth = rng.range(3, 4.5);
+      ctx.beginPath();
+      ctx.moveTo(i * step, dir > 0 ? 0 : size);
+      for (let s = 1; s <= cells; s++) ctx.lineTo(i * step + s * step + rng.range(-2, 2), dir > 0 ? s * step : size - s * step);
+      ctx.stroke();
+    }
+  }
+  for (let i = 0; i <= cells; i++) {
+    for (let j = 0; j <= cells; j++) {
+      ctx.beginPath();
+      ctx.arc(i * step, j * step, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const t = new CanvasTexture(canvas);
+  t.colorSpace = SRGBColorSpace;
+  t.wrapS = t.wrapT = RepeatWrapping;
+  t.generateMipmaps = true;
+  t.minFilter = LinearMipmapLinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
+
 export interface SharedTextures {
   sandColor: Texture;
   sandNormal: Texture;
@@ -336,6 +372,7 @@ export interface SharedTextures {
   grain: Texture;
   wood: Texture;
   fan: Texture;
+  net: Texture;
   stone: Texture;
   stoneNormal: Texture;
 }
@@ -355,6 +392,7 @@ export function getSharedTextures(): SharedTextures {
     grain: makeGrainTexture(),
     wood: makeWoodTexture(),
     fan: makeFanTexture(),
+    net: makeNetTexture(),
   };
   return sharedCache;
 }
